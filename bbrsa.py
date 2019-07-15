@@ -48,6 +48,57 @@ class ONMTSummaryRSA(BatchBeamRSA):
             preds.append(candidates)
         return preds
 
+    def summarize_with_s0(self, src, beam_size=1, n_best=1):
+        preds = []
+        with torch.no_grad():
+            s0 = self.s0
+
+            s0.set_configs(beam_size=beam_size, n_best=n_best)
+            s0.init_batch_iterator(src)
+
+            for batch in s0.data_iter:
+
+                s0.encode(batch)
+                s0.batch_augment(batch, beam_size)
+                s0.enc_states_augment(beam_size)
+                s0.dec_states_augment(beam_size)
+                max_length = s0.max_output_length
+                beam_batch_size = batch.batch_size
+                # actual batch size, if batch has fewer examples than max batch size
+
+                # TODO: Setup beam search considering reordering
+                beam = ONMTBeam(s0, batch_size=beam_batch_size, \
+                    beam_size=beam_size)
+
+                for step in range(max_length):
+                    decoder_input = beam.current_pred
+                    beam_batch_offset = beam.batch_offset
+
+                    log_probs, attn = s0.decode(decoder_input, batch, step, \
+                        beam_batch_offset)
+
+                    beam.advance(log_probs, attn)
+
+                    any_beam_is_finished = beam.any_beam_is_finished
+                    if any_beam_is_finished:
+                        beam.update_finished()
+                        if beam.is_done:
+                            break
+
+                    select_indices = beam.current_origin
+
+                    if any_beam_is_finished:
+                        s0.enc_states_rearrange(select_indices)
+                        s0.batch_rearrange(batch, select_indices)
+
+                    s0.dec_states_rearrange(select_indices)
+
+                batch_preds = self.itos(beam.predictions)
+                preds += batch_preds
+            # end for batch in iter
+        # end with no_grad
+        return preds
+
     def summarize_with_distractor(self, src, beam_size=1, n_best=1):
         """Summarize source text using RSA."""
         assert self.distractor is not None, 'Must specify distractor!'

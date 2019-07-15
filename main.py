@@ -8,10 +8,16 @@ def main():
     src = [sent, sent2]
 
     model = ONMTSummaryRSA()
+    print('----- Starting summary with distractor')
     start_time = time.time()
     pred = model.summarize_with_distractor(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print('=================================')
+
+    print('----- Starting summary without distractor')
+    start_time = time.time()
+    pred = model.summarize_with_s0(src, beam_size=10)
+    print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
 
     """
