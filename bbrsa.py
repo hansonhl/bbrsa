@@ -67,8 +67,10 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 s0.dec_states_augment(beam_size)
                 max_length = s0.max_output_length
 
+                # Beam only generates output for target text. The following
+                # give the batch size from the perspective of the beam.
+                # The elements in the beam are in their original unscrambled order
                 beam_batch_size = batch.batch_size // self.distractor.d_factor
-                # actual batch size, if batch has fewer examples than max batch size
 
                 beam = ONMTBeam(s0,
                     batch_size=beam_batch_size,
@@ -93,20 +95,25 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         step=step,
                         beam_batch_offset=beam_batch_offset)
 
-                    s0_log_probs = reshape_log_probs(
+                    s0_log_probs = reshape_beam2prag(
                         log_probs=log_probs,
                         beam_size=beam_size,
                         d_factor=self.distractor.d_factor,
                         scramble_idxs=batch.indices) #[B*b, d, V]
 
                     s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
-                    print('s1_log_probs[9:11,:,:6]\n', s1_log_probs[9:11,:,:7])
-                    print('s0_log_probs[9:11,:,:6]\n', s0_log_probs[9:11,:,:6])
 
+                    log_probs = reshape_prag2beam(
+                        log_probs=s1_log_probs,
+                        beam_size=beam_size,
+                        d_factor=self.distractor.d_factor,
+                        scramble_idxs=batch.indices)
 
-                    return
+                    print('log_probs.shape', log_probs.shape)
 
                     beam.advance(log_probs, attn)
+
+                    return
 
                     any_beam_is_finished = beam.any_beam_is_finished
                     if any_beam_is_finished:
@@ -132,9 +139,11 @@ def augment_dec_input(dec_input, beam_size, d_factor, scramble_idxs):
     """Given beam output for 2 targets, repeat and scramble for decoder input"""
     res = dec_input.view(-1, beam_size).repeat_interleave(d_factor, dim=0)
     res = res.index_select(0, scramble_idxs).view(1, -1, 1)
+    # [1, B*b, 1] -> [B, b] -> [B*d, b] -> [B*d, b] (dim 0 scrambled)
+    #             -> [1, B*d*b, 1]
     return res
 
-def reshape_log_probs(log_probs, beam_size, d_factor, scramble_idxs):
+def reshape_beam2prag(log_probs, beam_size, d_factor, scramble_idxs):
     vocab_size = log_probs.shape[-1]
     reorder_idxs = idx_remap(scramble_idxs)
     log_probs = log_probs.view(-1, beam_size, vocab_size) \
@@ -142,6 +151,10 @@ def reshape_log_probs(log_probs, beam_size, d_factor, scramble_idxs):
                          .view(-1, d_factor, beam_size, vocab_size)\
                          .permute(0,2,1,3).contiguous() \
                          .view(-1, d_factor, vocab_size)
-    #[B*d*b, V] -> [B*d, b, V] -> [B*d, b, V] (distractors grouped with tgts)
-    #           -> [B, d, b, V] -> [B, b, d, V] -> [B*b, d, V]
+    # [B*d*b, V] -> [B*d, b, V] -> [B*d, b, V] (dim 0 reordered)
+    #            -> [B, d, b, V] -> [B, b, d, V] -> [B*b, d, V]
     return log_probs
+
+def reshape_prag2beam(log_probs, beam_size, d_factor, scramble_idxs):
+    # input [B*b, d, V] -> output [B*b, V]
+    return log_probs[:, 0, :].squeeze()
