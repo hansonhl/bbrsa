@@ -3,7 +3,7 @@ import sys, os
 from abc import ABC, abstractmethod
 from models import ONMTSummarizer
 from beam import ONMTBeam
-from distractors import NextExampleDistractor
+from distractors import NextExampleDistractor, reorderidx2tgt
 
 ONMT_DIR = '../myOpenNMT'
 
@@ -66,17 +66,22 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # actual batch size, if batch has fewer examples than max batch size
 
                 # TODO: Setup beam search considering reordering
-                beam = ONMTBeam(s0, batch_size=beam_batch_size, \
-                    beam_size=beam_size)
+                beam = ONMTBeam(s0,
+                    batch_size=beam_batch_size,
+                    beam_size=beam_size,
+                    n_best=n_best,
+                    distractor=self.distractor,
+                    reorder_idx=batch.indices)
 
                 for step in range(max_length):
-                    decoder_input = augment_for_dec_input(beam.current_pred,
-                        self.distractor.d_factor, batch.indices)
+                    decoder_input = augment_dec_input(beam.current_pred,
+                        beam_size, self.distractor.d_factor, batch.indices)
+                    print('decoder_input', decoder_input)
                     # batch.indices contains the reordering index
 
                     beam_batch_offset = beam.batch_offset
 
-                    print('decoder_input', decoder_input)
+                    print('beam_batch_offset', beam_batch_offset)
 
                     log_probs, attn = s0.decode(decoder_input, batch, step, \
                         beam_batch_offset)
@@ -108,18 +113,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
         # end with no_grad
         return preds
 
-def scrambled2tgt(idxs, d_factor):
-    """Given reordering indices, get indices of target examples"""
-    # e.g. input [1,2,0,3]: out [2, 1], i.e. elements with id 2 and 1 in
-    # list [1,2,0,3] refer to two targets respectively, in correct order
-    if isinstance(idxs, torch.Tensor):
-        idxs = idxs.tolist()
-
-    pairs = list(zip(range(len(idxs)), idxs))
-    f = list(filter(lambda p: p[1] % d_factor == 0, pairs))
-    return [p[0] for p in sorted(f, key=lambda q: q[1])]
-
-def augment_for_dec_input(dec_input, d_factor, idxs):
+def augment_dec_input(dec_input, beam_size, d_factor, idxs):
     """Given beam output for 2 targets, repeat and scramble for decoder input"""
-    new_input = torch.repeat_interleave(dec_input, d_factor, dim=1)
-    return(new_input.index_select(1, idxs))
+    res = dec_input.view(-1, beam_size).repeat_interleave(d_factor, dim=0)
+    res = res.index_select(0, idxs).view(1, -1, 1)
+    return res

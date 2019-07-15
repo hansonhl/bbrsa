@@ -1,16 +1,24 @@
 from abstract_classes import Beam
+from distractors import reorderidx2tgt
 
 class ONMTBeam(Beam):
     def __init__(self, onmt_summarizer, batch_size, beam_size=None,
-        n_best=None, distractor=None):
+        n_best=None, distractor=None, reorder_idx=None):
         from onmt.translate.beam_search import BeamSearch
 
         s = onmt_summarizer
         T = onmt_summarizer.translator
 
-        # default values are given by
+        # default values are given by T
         beam_size = T.beam_size if beam_size is None else beam_size
         n_best = T.n_best if n_best is None else n_best
+
+        if distractor is None:
+            memory_lengths = s.memory_lengths
+        else:
+            tgt_idx = reorderidx2tgt(reorder_idx, distractor.d_factor)
+            memory_lengths = s.memory_lengths.view(-1, beam_size) \
+                .index_select(0, tgt_idx).view(-1)
 
         self.beam = BeamSearch(
             beam_size,
