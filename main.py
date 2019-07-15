@@ -8,10 +8,6 @@ def main():
     src = [sent, sent2]
 
     model = ONMTSummaryRSA()
-<<<<<<< HEAD
-    preds = model.summarize(src, beam_size=10)
-    print(preds)
-=======
     print('----- Starting summary with distractor')
     start_time = time.time()
     pred = model.summarize_with_distractor(src, beam_size=10)
@@ -23,7 +19,6 @@ def main():
     pred = model.summarize_with_s0(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
->>>>>>> thin-beam
 
     """
     <t> new : `` so far no videos were used in the investigation , '' prosecutor says . </t> <t> new : robin 's comments follow claims by two magazines and bild . </t> <t> new : he says he is not aware of any such video footage . </t> <t> new : the prosecutor 's office says the investigation is ongoing . </t>
