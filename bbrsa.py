@@ -52,13 +52,13 @@ class ONMTSummaryRSA(BatchBeamRSA):
         preds = []
         with torch.no_grad():
             s0 = self.s0
+            d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-
             src, batch_size = self.distractor.generate(src)
-
             s0.init_batch_iterator(src, batch_size)
 
             for batch in s0.data_iter:
+                scramble_idxs = batch.indices
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
@@ -70,7 +70,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # Beam only generates output for target text. The following
                 # give the batch size from the perspective of the beam.
                 # The elements in the beam are in their original unscrambled order
-                beam_batch_size = batch.batch_size // self.distractor.d_factor
+                beam_batch_size = batch.batch_size // d_factor
 
                 beam = ONMTBeam(s0,
                     batch_size=beam_batch_size,
@@ -80,11 +80,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     scramble_idxs=batch.indices)
 
                 for step in range(max_length):
-                    decoder_input = reshape_beam2dec(
-                        input=beam.current_pred,
-                        beam_size=beam_size,
-                        d_factor=self.distractor.d_factor,
-                        scramble_idxs=batch.indices)
+                    decoder_input = _reshape_beam2dec(beam.current_pred,
+                        beam_size, d_factor, scramble_idxs)
 
                     beam_batch_offset = list(range(len(beam.batch_offset) * \
                         self.distractor.d_factor))
@@ -95,19 +92,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         step=step,
                         beam_batch_offset=beam_batch_offset)
 
-                    s0_log_probs = reshape_dec2prag(
-                        input=log_probs,
-                        beam_size=beam_size,
-                        d_factor=self.distractor.d_factor,
-                        scramble_idxs=batch.indices) #[B*b, d, V]
+                    s0_log_probs = _reshape_dec2prag(log_probs, beam_size,
+                        d_factor, scramble_idxs) #[B*b, d, V]
+
+                    attn = _reshape_attn(attn, beam_size, d_factor, scramble_idxs)
 
                     s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
 
-                    log_probs = reshape_prag2beam(
-                        input=s1_log_probs,
-                        beam_size=beam_size,
-                        d_factor=self.distractor.d_factor,
-                        scramble_idxs=batch.indices)
+                    log_probs = _reshape_prag2beam(s1_log_probs, beam_size,
+                        d_factor, scramble_idxs)
 
                     beam.advance(log_probs, attn)
 
@@ -117,12 +110,9 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         if beam.is_done:
                             break
 
-                    select_indices = beam.current_origin
-                    select_indices = reshape_beam2dec(
-                        input=select_indices,
-                        beam_size=beam_size,
-                        d_factor=self.distractor.d_factor,
-                        scramble_idxs=batch.indices)
+                    select_indices = _reshape_select_idxs(beam.current_origin,
+                        beam_size, d_factor, scramble_idxs)
+                    print('select_indices.shape', select_indices.shape)
 
                     if any_beam_is_finished:
                         s0.enc_states_rearrange(select_indices)
@@ -137,16 +127,19 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return preds
 
 def reshape_beam2dec(input, beam_size, d_factor, scramble_idxs):
-    """Given beam output for 2 targets, repeat and scramble for decoder input"""
+    """Given beam output for targets, repeat and scramble for decoder input"""
+    # [1, B*b, 1] -> [B, b] -> [B*d, b] (repeat for distractors)
+    #             -> [B*d, b] (dim 0 scrambled) -> [1, B*d*b, 1]
     res = input.view(-1, beam_size) \
                .repeat_interleave(d_factor, dim=0) \
                .index_select(0, scramble_idxs) \
                .view(1, -1, 1)
-    # [1, B*b, 1] -> [B, b] -> [B*d, b] (repeat for distractors)
-    #             -> [B*d, b] (dim 0 scrambled) -> [1, B*d*b, 1]
     return res
 
-def reshape_dec2prag(input, beam_size, d_factor, scramble_idxs):
+def _reshape_dec2prag(input, beam_size, d_factor, scramble_idxs):
+    """Reshape decoder output for input into pragmatics"""
+    # [B*d*b, V] -> [B*d, b, V] -> [B*d, b, V] (dim 0 reordered)
+    #            -> [B, d, b, V] -> [B, b, d, V] -> [B*b, d, V]
     vocab_size = input.shape[-1]
     reorder_idxs = idx_remap(scramble_idxs)
     res = input.view(-1, beam_size, vocab_size) \
@@ -154,10 +147,25 @@ def reshape_dec2prag(input, beam_size, d_factor, scramble_idxs):
                .view(-1, d_factor, beam_size, vocab_size)\
                .permute(0,2,1,3).contiguous() \
                .view(-1, d_factor, vocab_size)
-    # [B*d*b, V] -> [B*d, b, V] -> [B*d, b, V] (dim 0 reordered)
-    #            -> [B, d, b, V] -> [B, b, d, V] -> [B*b, d, V]
-    return log_probs
+    return res
 
-def reshape_prag2beam(input, beam_size, d_factor, scramble_idxs):
+def _reshape_prag2beam(input, beam_size, d_factor, scramble_idxs):
+    """Reshape pragmatics output for input into beam search"""
     # input [B*b, d, V] -> output [B*b, V]
     return input[:, 0, :].squeeze()
+
+def _reshape_attn(input, beam_size, d_factor, scramble_idxs):
+    """Reshape attn from decoder for beam search"""
+
+
+def _reshape_select_idxs(input, beam_size, d_factor, scramble_idxs):
+    """Reshape select indices from beam for rearranging states"""
+    res = input.view(-1, beam_size)
+    offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
+    res -= offset
+    res = res.repeat_interleave(d_factor, dim=0) \
+             .index_select(0, scramble_idxs)
+    offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
+    res += offset
+    res = res.view(-1)
+    return res
