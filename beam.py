@@ -1,5 +1,5 @@
 from abstract_classes import Beam
-from distractors import reorderidx2tgt
+from pragmatics import reorderidx2tgt
 
 class ONMTBeam(Beam):
     def __init__(self, onmt_summarizer, batch_size, beam_size=None,

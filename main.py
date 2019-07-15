@@ -7,7 +7,7 @@ def main():
     src = [sent, sent2]
 
     model = ONMTSummaryRSA()
-    model.summarize(src, beam_size=10)
+    model.summarize_with_distractor(src, beam_size=10)
 
     """
     <t> new : `` so far no videos were used in the investigation , '' prosecutor says . </t> <t> new : robin 's comments follow claims by two magazines and bild . </t> <t> new : he says he is not aware of any such video footage . </t> <t> new : the prosecutor 's office says the investigation is ongoing . </t>

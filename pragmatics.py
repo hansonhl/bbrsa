@@ -16,6 +16,21 @@ class NextExampleDistractor(object):
                 new_src.append(batch[next_id])
         return new_src, self.new_batch_size
 
+class BasicPragmatics(object):
+    def __init__(self, batch_size, d_factor, beam_size):
+        self.batch_size = batch_size
+        self.d_factor = d_factor
+        self.beam_size = beam_size
+
+    def l1(self, log_probs):
+        """Pragmatics listener bases on top of s0"""
+        transposed = log_probs.transpose(1, 2) #[B*b, V, d]
+        return transposed - torch.logsumexp(transposed, dim=2, keepdim=True)
+
+        # need to deal with inf
+
+
+
 def _chunks(l, n):
     """Yield successive n-sized chunks from l."""
     # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
