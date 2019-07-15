@@ -3,7 +3,7 @@ import sys, os
 from abc import ABC, abstractmethod
 from models import ONMTSummarizer
 from beam import ONMTBeam
-from pragmatics import NextExampleDistractor, BasicPragmatics, idx_remap
+from pragmatics import NextExampleDistractor, BasicPragmatics, idx_remap, scramble2tgt
 
 ONMT_DIR = '../myOpenNMT'
 
@@ -82,7 +82,6 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 for step in range(max_length):
                     decoder_input = _reshape_beam2dec(beam.current_pred,
                         beam_size, d_factor, scramble_idxs)
-
                     beam_batch_offset = list(range(len(beam.batch_offset) * \
                         self.distractor.d_factor))
 
@@ -94,7 +93,6 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
                     s0_log_probs = _reshape_dec2prag(log_probs, beam_size,
                         d_factor, scramble_idxs) #[B*b, d, V]
-
                     attn = _reshape_attn(attn, beam_size, d_factor, scramble_idxs)
 
                     s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
@@ -110,9 +108,9 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         if beam.is_done:
                             break
 
-                    select_indices = _reshape_select_idxs(beam.current_origin,
-                        beam_size, d_factor, scramble_idxs)
-                    print('select_indices.shape', select_indices.shape)
+                    select_indices, scramble_idxs = \
+                        _reshape_select_idxs_and_rescramble(
+                        beam.current_origin, beam_size, d_factor, scramble_idxs)
 
                     if any_beam_is_finished:
                         s0.enc_states_rearrange(select_indices)
@@ -126,7 +124,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
         # end with no_grad
         return preds
 
-def reshape_beam2dec(input, beam_size, d_factor, scramble_idxs):
+def _reshape_beam2dec(input, beam_size, d_factor, scramble_idxs):
     """Given beam output for targets, repeat and scramble for decoder input"""
     # [1, B*b, 1] -> [B, b] -> [B*d, b] (repeat for distractors)
     #             -> [B*d, b] (dim 0 scrambled) -> [1, B*d*b, 1]
@@ -156,16 +154,58 @@ def _reshape_prag2beam(input, beam_size, d_factor, scramble_idxs):
 
 def _reshape_attn(input, beam_size, d_factor, scramble_idxs):
     """Reshape attn from decoder for beam search"""
+    # [1, B*d*b, L] -> [B*d, b, L] -> [B, b, L] -> [1, B*b, L]
+    max_len = input.shape[-1]
+    tgt_idxs = scramble2tgt(scramble_idxs, d_factor)
+    res = input.view(-1, beam_size, max_len) \
+               .index_select(0, tgt_idxs) \
+               .view(1, -1, max_len)
+    return res
 
 
-def _reshape_select_idxs(input, beam_size, d_factor, scramble_idxs):
+def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor, scramble_idxs):
     """Reshape select indices from beam for rearranging states"""
     res = input.view(-1, beam_size)
-    offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
-    res -= offset
-    res = res.repeat_interleave(d_factor, dim=0) \
-             .index_select(0, scramble_idxs)
-    offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
-    res += offset
-    res = res.view(-1)
-    return res
+    B = res.shape[0]
+
+    if B * d_factor == scramble_idxs.shape[0]:
+        offset = (torch.arange(B) * beam_size).view(-1, 1)
+        res -= offset
+        res = res.repeat_interleave(d_factor, dim=0) \
+                 .index_select(0, scramble_idxs)
+        offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
+        res += offset
+        res = res.view(-1)
+
+        return res, scramble_idxs
+    else:
+        rem_tgts = res[:, 0] // beam_size # remaining targets
+        num_rem_tgts = rem_tgts.shape[0]
+        num_rem_tot = rem_tgts.shape[0] * d_factor
+        print('rem_tgts', rem_tgts)
+        rem_tgts_idxs = ((rem_tgts.repeat_interleave(d_factor, dim=0) * d_factor) \
+            .view(-1, d_factor) + torch.arange(d_factor)).view(-1)
+        print('rem_tgts_idxs', rem_tgts_idxs)
+
+        rem_tgts_idx_map = torch.ones(scramble_idxs.shape[0], dtype=torch.long) * -1
+        for i, x in enumerate(rem_tgts_idxs):
+            rem_tgts_idx_map[x] = i
+        print('rem_tgts_idx_map', rem_tgts_idx_map)
+        new_scramble_idxs = []
+        for i, x in enumerate(scramble_idxs):
+            if rem_tgts_idx_map[x] != -1:
+                new_scramble_idxs.append(rem_tgts_idx_map[x])
+        new_scramble_idxs = torch.tensor(new_scramble_idxs)
+
+        scramble_mask = rem_tgts_idx_map[scramble_idxs] != -1
+        filtered_scramble_idxs = scramble_idxs[scramble_mask]
+
+        offset = (rem_tgts * beam_size).view(-1, 1)
+        res -= offset
+        res = res.repeat_interleave(d_factor, dim=0) \
+                 .index_select(0, new_scramble_idxs)
+        offset = (filtered_scramble_idxs * beam_size).view(-1, 1)
+        res += offset
+        res = res.view(-1)
+
+        return res, new_scramble_idxs
