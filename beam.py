@@ -1,9 +1,9 @@
 from abstract_classes import Beam
-from pragmatics import reorderidx2tgt
+from pragmatics import scramble2tgt
 
 class ONMTBeam(Beam):
     def __init__(self, onmt_summarizer, batch_size, beam_size=None,
-        n_best=None, distractor=None, reorder_idx=None):
+        n_best=None, distractor=None, scramble_idxs=None):
         from onmt.translate.beam_search import BeamSearch
 
         s = onmt_summarizer
@@ -16,7 +16,7 @@ class ONMTBeam(Beam):
         if distractor is None:
             memory_lengths = s.memory_lengths
         else:
-            tgt_idx = reorderidx2tgt(reorder_idx, distractor.d_factor)
+            tgt_idx = scramble2tgt(scramble_idxs, distractor.d_factor)
             memory_lengths = s.memory_lengths.view(-1, beam_size) \
                 .index_select(0, tgt_idx).view(-1)
 

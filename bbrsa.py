@@ -3,7 +3,7 @@ import sys, os
 from abc import ABC, abstractmethod
 from models import ONMTSummarizer
 from beam import ONMTBeam
-from pragmatics import NextExampleDistractor, BasicPragmatics
+from pragmatics import NextExampleDistractor, BasicPragmatics, idx_remap
 
 ONMT_DIR = '../myOpenNMT'
 
@@ -21,10 +21,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
         self.distractor = NextExampleDistractor(
             batch_size=default_batch_size)
-        self.pragmatics = BasicPragmatics(
-            batch_size=default_beam_size,
-            d_factor=self.distractor.d_factor,
-            beam_size=default_beam_size)
+        self.pragmatics = BasicPragmatics()
 
     def itos(self, idxs):
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
@@ -62,7 +59,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
             s0.init_batch_iterator(src, batch_size)
 
             for batch in s0.data_iter:
-                # batch.indices contains the reordering index
+                # batch.indices contains the scrambling index
+                # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
@@ -77,11 +75,14 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     beam_size=beam_size,
                     n_best=n_best,
                     distractor=self.distractor,
-                    reorder_idx=batch.indices)
+                    scramble_idxs=batch.indices)
 
                 for step in range(max_length):
-                    decoder_input = augment_dec_input(beam.current_pred,
-                        beam_size, self.distractor.d_factor, batch.indices)
+                    decoder_input = augment_dec_input(
+                        dec_input=beam.current_pred,
+                        beam_size=beam_size,
+                        d_factor=self.distractor.d_factor,
+                        scramble_idxs=batch.indices)
 
                     beam_batch_offset = list(range(len(beam.batch_offset) * \
                         self.distractor.d_factor))
@@ -92,13 +93,16 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         step=step,
                         beam_batch_offset=beam_batch_offset)
 
-                    log_probs = reshape_log_probs(
+                    s0_log_probs = reshape_log_probs(
                         log_probs=log_probs,
                         beam_size=beam_size,
                         d_factor=self.distractor.d_factor,
-                        idxs=batch.indices)
-                    print('log_probs.shape', log_probs.shape)
-                    print('log_probs[:6,:,:10]', log_probs[:6,:,:10])
+                        scramble_idxs=batch.indices) #[B*b, d, V]
+
+                    s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
+                    print('s1_log_probs[9:11,:,:6]\n', s1_log_probs[9:11,:,:7])
+                    print('s0_log_probs[9:11,:,:6]\n', s0_log_probs[9:11,:,:6])
+
 
                     return
 
@@ -124,18 +128,17 @@ class ONMTSummaryRSA(BatchBeamRSA):
         # end with no_grad
         return preds
 
-def augment_dec_input(dec_input, beam_size, d_factor, idxs):
+def augment_dec_input(dec_input, beam_size, d_factor, scramble_idxs):
     """Given beam output for 2 targets, repeat and scramble for decoder input"""
     res = dec_input.view(-1, beam_size).repeat_interleave(d_factor, dim=0)
-    res = res.index_select(0, idxs).view(1, -1, 1)
+    res = res.index_select(0, scramble_idxs).view(1, -1, 1)
     return res
 
-def reshape_log_probs(log_probs, beam_size, d_factor, idxs):
+def reshape_log_probs(log_probs, beam_size, d_factor, scramble_idxs):
     vocab_size = log_probs.shape[-1]
-    restore_order_idxs = torch.tensor([p[0] for p in \
-        sorted(list(zip(range(len(idxs)),idxs)), key=lambda q: q[1])])
+    reorder_idxs = idx_remap(scramble_idxs)
     log_probs = log_probs.view(-1, beam_size, vocab_size) \
-                         .index_select(0, restore_order_idxs) \
+                         .index_select(0, reorder_idxs) \
                          .view(-1, d_factor, beam_size, vocab_size)\
                          .permute(0,2,1,3).contiguous() \
                          .view(-1, d_factor, vocab_size)
