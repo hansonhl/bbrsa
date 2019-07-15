@@ -24,6 +24,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
         self.pragmatics = BasicPragmatics()
 
     def itos(self, idxs):
+        """Converts arrays of indices to text"""
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
         # uses method defined in TranslationBuilder._build_target_tokens()
         base_itos = dict(self.s0.translator.fields)['tgt'].base_field.vocab.itos
@@ -48,6 +49,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return preds
 
     def summarize_with_distractor(self, src, beam_size=1, n_best=1):
+        """Summarize source text using RSA."""
         assert self.distractor is not None, 'Must specify distractor!'
         preds = []
         with torch.no_grad():
@@ -179,24 +181,22 @@ def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor, scramble_idx
 
         return res, scramble_idxs
     else:
+        # get indices of remaining targets in original, unscrambled order
         rem_tgts = res[:, 0] // beam_size # remaining targets
-        num_rem_tgts = rem_tgts.shape[0]
-        num_rem_tot = rem_tgts.shape[0] * d_factor
-        print('rem_tgts', rem_tgts)
         rem_tgts_idxs = ((rem_tgts.repeat_interleave(d_factor, dim=0) * d_factor) \
             .view(-1, d_factor) + torch.arange(d_factor)).view(-1)
-        print('rem_tgts_idxs', rem_tgts_idxs)
 
+        # get new scramble idxs given old scramble idxs and remaining targets
         rem_tgts_idx_map = torch.ones(scramble_idxs.shape[0], dtype=torch.long) * -1
         for i, x in enumerate(rem_tgts_idxs):
             rem_tgts_idx_map[x] = i
-        print('rem_tgts_idx_map', rem_tgts_idx_map)
         new_scramble_idxs = []
         for i, x in enumerate(scramble_idxs):
             if rem_tgts_idx_map[x] != -1:
                 new_scramble_idxs.append(rem_tgts_idx_map[x])
         new_scramble_idxs = torch.tensor(new_scramble_idxs)
 
+        # filter out old scramble idxs of remaining targets
         scramble_mask = rem_tgts_idx_map[scramble_idxs] != -1
         filtered_scramble_idxs = scramble_idxs[scramble_mask]
 
