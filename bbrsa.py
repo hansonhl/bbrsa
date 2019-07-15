@@ -52,8 +52,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
             s0 = self.s0
 
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-            src, new_batch_size = self.distractor.generate(src)
-            s0.init_batch_iterator(src, new_batch_size)
+            s0.init_batch_iterator(src)
 
             for batch in s0.data_iter:
 
@@ -62,7 +61,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 s0.enc_states_augment(beam_size)
                 s0.dec_states_augment(beam_size)
                 max_length = s0.max_output_length
-                beam_batch_size = batch.batch_size // self.distractor.d_factor
+                beam_batch_size = batch.batch_size
                 # actual batch size, if batch has fewer examples than max batch size
 
                 # TODO: Setup beam search considering reordering
@@ -70,21 +69,11 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     beam_size=beam_size)
 
                 for step in range(max_length):
-                    decoder_input = augment_for_dec_input(beam.current_pred,
-                        self.distractor.d_factor, batch.indices)
-                    # batch.indices contains the reordering index
-
+                    decoder_input = beam.current_pred
                     beam_batch_offset = beam.batch_offset
-
-                    print('decoder_input', decoder_input)
 
                     log_probs, attn = s0.decode(decoder_input, batch, step, \
                         beam_batch_offset)
-
-                    print('log_probs.shape', log_probs.shape)
-                    print('attn.shape', attn.shape)
-
-                    return
 
                     beam.advance(log_probs, attn)
 
