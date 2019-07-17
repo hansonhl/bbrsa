@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from scipy.special import logsumexp
 
 class NextExampleDistractor(object):
     """Use next example in batch as distractor"""
@@ -22,22 +23,31 @@ class BasicPragmatics(object):
         self.alpha = alpha
 
     def l1(self, log_probs):
-        """Pragmatics listener bases on top of s0"""
+        """Pragmatic listener bases on top of s0"""
         # TODO: consider efficiency of not transposing?
         normalized = log_probs - torch.logsumexp(log_probs, dim=1, keepdim=True)
         normalized[torch.isnan(normalized)] = -np.log(normalized.shape[1])
+        # print('has inf?', normalized[torch.isinf(normalized)].shape)
+
         return normalized
 
     def s1(self, s0_log_probs, l1_log_probs):
-        log_probs = s0_log_probs + self.alpha * l1_log_probs
-        normalized = log_probs - torch.logsumexp(log_probs, dim=2, keepdim=True)
+        """Pragmatic speaker"""
+        adjusted = self.alpha * l1_log_probs
+        isnan_mask = torch.isnan(adjusted)
+        adjusted[isnan_mask] = float('-inf')
+
+        log_probs = s0_log_probs + adjusted
+
+        lse = torch.logsumexp(log_probs, dim=2, keepdim=True)
+        normalized = log_probs - lse
         return normalized
 
     def inference(self, s0_log_probs):
+        # issue is now fixed, problem was because s0_log_probs was not normalized
         l1_log_probs = self.l1(s0_log_probs)
-        return self.s1(s0_log_probs, l1_log_probs)
-
-
+        res = self.s1(s0_log_probs, l1_log_probs)
+        return res
 
 
 def _chunks(l, n):
@@ -60,12 +70,5 @@ def scramble2tgt(idxs, d_factor):
 
 def idx_remap(idxs):
     # e.g. input idxs=[1,2,0,3] -> output [2,0,1,3]
-    if isinstance(idxs, torch.Tensor):
-        idxs_len = idxs.shape[0]
-    elif isinstance(idxs, list):
-        idxs_len = len(idxs)
-
-    scrambled = torch.LongTensor(idxs_len)
-    for i, x in enumerate(idxs):
-        scrambled[x] = i
-    return scrambled
+    inds, perm = torch.sort(idxs)
+    return perm

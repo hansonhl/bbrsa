@@ -1,5 +1,4 @@
 import torch
-
 from abstract_classes import LiteralSpeaker
 
 DEFAULT_CONFIG_DIR = 'summary_inference2.yml'
@@ -8,11 +7,12 @@ class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_dir=DEFAULT_CONFIG_DIR):
 
         print('Configuring summary model...')
-        import onmt
+
         from onmt.utils.parse import ArgumentParser
         import onmt.opts as opts
         from onmt.translate.translator import build_translator
         from onmt.utils.misc import tile
+
 
         parser = ArgumentParser(default_config_files=[config_dir])
         opts.translate_opts(parser)
@@ -42,6 +42,7 @@ class ONMTSummarizer(LiteralSpeaker):
             src: a python list of raw input text to be summarized
         """
         import onmt.inputters as inputters
+        from onmt.translate import TranslationBuilder
 
         T = self.translator
         self.data = inputters.Dataset(
@@ -65,6 +66,11 @@ class ONMTSummarizer(LiteralSpeaker):
             sort_within_batch=True,
             shuffle=False
         )
+
+        # build translator
+        self.xlation_builder = TranslationBuilder(
+            self.data, T.fields, T.n_best, T.replace_unk, None,
+            T.phrase_table)
 
     def encode(self, batch):
         T = self.translator
@@ -116,6 +122,9 @@ class ONMTSummarizer(LiteralSpeaker):
             src_map=self.src_map,
             step=step,
             batch_offset=beam_batch_offset)
+        # normalize
+        lse = torch.logsumexp(log_probs, dim=1, keepdim=True)
+        log_probs = log_probs - lse
 
         return log_probs, attn
 
