@@ -50,6 +50,20 @@ class BasicPragmatics(object):
         res = self.s1(s0_log_probs, l1_log_probs).type(torch.float)
         return res
 
+class IdenticalDistractor(object):
+    """Use the sample itself as distractor"""
+    def __init__(self, batch_size):
+        self.orig_batch_size = batch_size
+        self.d_factor = 2
+        self.new_batch_size = self.d_factor * batch_size
+
+    def generate(self, src):
+        new_src = []
+        for x in src:
+            new_src.append(x)
+            new_src.append(x)
+        return new_src, self.new_batch_size
+
 
 def _chunks(l, n):
     """Yield successive n-sized chunks from l."""

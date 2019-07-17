@@ -7,7 +7,7 @@ from pragmatics import NextExampleDistractor, BasicPragmatics
 
 src_file = 'data/cnndm_val_first5_src.txt'
 tgt_file = 'data/cnndm_val_first5_tgt.txt'
-res_file = 'res_new.txt'
+res_file = 'res1.txt'
 ONMT_DIR = '../myOpenNMT'
 
 def main():
@@ -18,7 +18,7 @@ def main():
         tgt = f.readlines()
 
     s0 = ONMTSummarizer()
-    pragmatics = BasicPragmatics(alpha=0)
+    pragmatics = BasicPragmatics(alpha=1)
     distractor = NextExampleDistractor(batch_size=s0.opt.batch_size)
     model = ONMTSummaryRSA(s0, pragmatics, distractor)
 
@@ -36,12 +36,6 @@ def main():
 
     with open(res_file, 'w') as f:
         for s, l1, l2 in zip(tgt, pred1, pred2):
-            if l1[0] != l2[0]:
-                print('Difference found!')
-                print('[PRAG]')
-                print(l1[0])
-                print('[BASE]')
-                print(l2[0])
             f.write('\n====================\n[REFERENCE] ')
             f.write(s)
             f.write('\n--------------------\n[PRAG] ')

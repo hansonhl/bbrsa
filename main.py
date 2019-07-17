@@ -3,7 +3,6 @@ import sys, os
 import torch
 
 from bbrsa import ONMTSummaryRSA
-
 from models import ONMTSummarizer
 from pragmatics import NextExampleDistractor, BasicPragmatics
 
