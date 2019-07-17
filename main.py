@@ -1,5 +1,6 @@
 import time
 import sys, os
+import torch
 
 from bbrsa import ONMTSummaryRSA
 
@@ -27,16 +28,29 @@ def main():
 
     print('----- Starting summary with distractor')
     start_time = time.time()
-    pred = model.summarize_with_distractor(src, beam_size=1)
+    pred = model.summarize_with_distractor(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
     print('=================================')
 
     print('----- Starting summary without distractor')
     start_time = time.time()
-    pred = model.summarize_with_s0(src, beam_size=1)
+    pred = model.summarize_with_s0(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
+
+    # print('=================================')
+    # print('compare lengths:', len(log_probs1), len(log_probs2))
+    # step = 0
+    # for p1, p2 in zip(log_probs1, log_probs2):
+    #     print('step', step, 'p1.shape', p1.shape, 'p2.shape', p2.shape)
+    #     if p1.shape == p2.shape:
+    #         diff = torch.gt(torch.abs(torch.add(p1, -p2)), 1e-5)
+    #         resdiff = p1[diff].shape
+    #         print('    differences:', resdiff)
+    #         print('    p1[:6]', p1[:,:6])
+    #         print('    p2[:6]', p2[:,:6])
+    #     step += 1
 
     """
     <t> new : `` so far no videos were used in the investigation , '' prosecutor says . </t> <t> new : robin 's comments follow claims by two magazines and bild . </t> <t> new : he says he is not aware of any such video footage . </t> <t> new : the prosecutor 's office says the investigation is ongoing . </t>

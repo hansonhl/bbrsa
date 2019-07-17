@@ -39,18 +39,26 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 token.append('<invalid>')
         return tokens
 
-    def itos(self, idxs, batch, scramble_idxs=None):
+    def itos(self, idxs, batch, reordered=False, d_factor=None):
         """Converts arrays of indices to text"""
-        # scramble_idxs is not none: used when idx order is scrambled
+        # reordered is false when idx order is scrambled (for summarize_with_s0)
+        # batch provides extended vocab and scrambled indices
 
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
         # uses method defined in TranslationBuilder._build_target_tokens()
         base_itos = dict(self.s0.translator.fields)['tgt'].base_field.vocab.itos
         base_size = len(base_itos)
         preds = []
+        scramble_idxs = batch.indices
+        if reordered:
+            tgt_idxs = scramble2tgt(scramble_idxs, d_factor)
+            tgt_ex_vocabs = [batch.src_ex_vocab[i] for i in tgt_idxs]
+        else:
+            tgt_ex_vocabs = batch.src_ex_vocab
+
         for b, sent in enumerate(idxs):
             candidates = []
-            ext_itos = self.s0.data.src_vocabs[b].itos
+            ext_itos = tgt_ex_vocabs[b].itos
             ext_size = len(ext_itos)
             full_size = base_size + ext_size
             for i in sent:
@@ -65,36 +73,34 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         if tok_str != '</s>':
                             tokens.append(tok_str)
                     else:
-                        break
+                        print('Invalid token!')
                 candidates.append(' '.join(tokens))
             preds.append(candidates)
-        if scramble_idxs is not None:
+
+        if not reordered:
             reorder_idxs = idx_remap(scramble_idxs)
             preds = [preds[i] for i in reorder_idxs]
         return preds
 
     def summarize_with_s0(self, src, beam_size=1, n_best=1):
         preds = []
+        #all_log_probs = []
+        #curr_preds = []
         with torch.no_grad():
             s0 = self.s0
+
 
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             s0.init_batch_iterator(src)
 
             for batch in s0.data_iter:
-                # result_dict = {
-                #     "predictions": None,
-                #     "scores": None,
-                #     "attention": None,
-                #     "batch": batch,
-                #     "gold_score": [0] * batch.batch_size}
-
                 s0.encode(batch)
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
                 s0.dec_states_augment(beam_size)
                 max_length = s0.max_output_length
                 beam_batch_size = batch.batch_size
+                scramble_idxs = batch.indices
                 # actual batch size, if batch has fewer examples than max batch size
 
                 beam = ONMTBeam(s0, batch_size=beam_batch_size, \
@@ -107,6 +113,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     log_probs, attn = s0.decode(decoder_input, batch, step, \
                         beam_batch_offset)
 
+                    #print('----step', step)
+                    #print(log_probs[:, :6])
+
+                    # reorder_idxs = idx_remap(scramble_idxs)
+                    # vocab_size = log_probs.shape[-1]
+                    # reshaped = log_probs.view(-1, beam_size, vocab_size) \
+                    #                     .index_select(0, reorder_idxs) \
+                    #                     .view(-1, vocab_size)
+                    # all_log_probs.append(reshaped)
                     beam.advance(log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
@@ -116,31 +131,44 @@ class ONMTSummaryRSA(BatchBeamRSA):
                             break
 
                     select_indices = beam.current_origin
+                    # print('select_idxs', select_indices)
+
+                    # res = select_indices.view(-1, beam_size)    # [2,1]
+                    # B = res.shape[0]
+                    # if B != scramble_idxs.shape[0]:
+                    #     rem_tgts = res[:, 0] // beam_size
+                    #     rem_tgts_idx_map = torch.ones(scramble_idxs.shape[0], dtype=torch.long) * -1
+                    #     for i, x in enumerate(rem_tgts):
+                    #         rem_tgts_idx_map[x] = i
+                    #     new_scramble_idxs = []
+                    #     for i, x in enumerate(scramble_idxs):
+                    #         if rem_tgts_idx_map[x] != -1:
+                    #             new_scramble_idxs.append(rem_tgts_idx_map[x])
+                    #     new_scramble_idxs = torch.tensor(new_scramble_idxs)
+                    #     scramble_idxs = new_scramble_idxs
+                    # reorder_idxs = idx_remap(scramble_idxs)
 
                     if any_beam_is_finished:
+                        # print('----rearrange happened')
                         s0.enc_states_rearrange(select_indices)
                         s0.batch_rearrange(batch, select_indices)
 
                     s0.dec_states_rearrange(select_indices)
+                    # curr_preds.append(beam.current_pred.view(-1).index_select(0, reorder_idxs))
 
+                batch_preds = self.itos(beam.predictions, batch)
+                preds += batch_preds
 
-                # result_dict["scores"] = beam.beam.scores
-                # result_dict["predictions"] = beam.predictions # [[tensor], [tensor]]
-                # result_dict["attention"] = beam.beam.attention
-                #
-                # translations = s0.xlation_builder.from_batch(result_dict)
-                # for trans in translations:
-                #     n_best_preds = [" ".join(pred)
-                #                     for pred in trans.pred_sents[:n_best]]
-                #     preds += [n_best_preds]
             # end for batch in iter
         # end with no_grad
-        return preds
+        return preds #, all_log_probs, curr_preds
 
     def summarize_with_distractor(self, src, beam_size=1, n_best=1):
         """Summarize source text using RSA."""
         assert self.distractor is not None, 'Must specify distractor!'
         preds = []
+        # all_log_probs = []
+        # curr_preds = []
         with torch.no_grad():
             s0 = self.s0
             d_factor = self.distractor.d_factor
@@ -150,13 +178,6 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
             for batch in s0.data_iter:
                 scramble_idxs = batch.indices
-
-                result_dict = {
-                    "predictions": None,
-                    "scores": None,
-                    "attention": None,
-                    "batch": batch,
-                    "gold_score": [0] * batch.batch_size}
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
@@ -188,21 +209,22 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         batch=batch,
                         step=step,
                         beam_batch_offset=beam_batch_offset)
+                    # print('----step', step)
+                    # print(log_probs[:,:6])
 
                     # log_probs_for_debug = torch.FloatTensor(log_probs)
-
                     s0_log_probs = _reshape_dec2prag(log_probs, beam_size,
-                        d_factor, scramble_idxs) #[B*b, d, V]
+                        d_factor, scramble_idxs) #[B*b, d, V] #ok
                     attn = _reshape_attn(attn, beam_size, d_factor, scramble_idxs)
 
-                    s1_log_probs = s0_log_probs
-                    # s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
+                    # s1_log_probs = s0_log_probs
+                    s1_log_probs = self.pragmatics.inference(s0_log_probs) #[B*b, d, V]
 
                     beam_log_probs = _reshape_prag2beam(s1_log_probs, beam_size,
-                        d_factor, scramble_idxs)
-
+                        d_factor, scramble_idxs) #ok
                     # _log_probs_debug(step, beam_size, d_factor, beam_log_probs, log_probs_for_debug, scramble_idxs)
 
+                    # all_log_probs.append(beam_log_probs)
                     beam.advance(beam_log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
@@ -211,34 +233,29 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         if beam.is_done:
                             break
 
+                    # print('select_idxs before scramble', beam.current_origin)
+
                     select_indices, scramble_idxs = \
                         _reshape_select_idxs_and_rescramble(
-                        beam.current_origin, beam_size, d_factor, scramble_idxs, step=step)
+                        beam.current_origin, beam_size, d_factor, scramble_idxs,
+                        step=step)
+                    # print('select_idxs after scramble', select_indices)
 
                     # print('step', step, 'current_prediction:')
                     # print('    ', self.itos_single_array(beam.current_pred.squeeze(), beam_size))
                     if any_beam_is_finished:
+                        # print('----rearrange happened')
                         s0.enc_states_rearrange(select_indices)
                         s0.batch_rearrange(batch, select_indices)
                     s0.dec_states_rearrange(select_indices)
+                    # curr_preds.append(beam.current_pred.view(-1))
+                # end for step
+                batch_preds = self.itos(beam.predictions, batch, reordered=True, d_factor=d_factor)
+                preds += batch_preds
 
-                result_dict["scores"] = _dup_and_scramble(
-                    beam.beam.scores, beam_size, d_factor, batch.indices)
-                result_dict["predictions"] = _dup_and_scramble(
-                    beam.predictions, beam_size, d_factor, batch.indices)
-                print(result_dict["predictions"])
-                print(batch.src[0])
-                result_dict["attention"] = _dup_and_scramble(
-                    beam.beam.attention, beam_size, d_factor, batch.indices)
-
-                translations = s0.xlation_builder.from_batch(result_dict)
-                for trans in translations:
-                    n_best_preds = [" ".join(pred)
-                                    for pred in trans.pred_sents[:n_best]]
-                    preds += [n_best_preds]
-            # end for batch in iter
+            # end for batch
         # end with no_grad
-        return preds
+        return preds #, all_log_probs, curr_preds
 
 def _dup_and_scramble(input, beam_size, d_factor, scramble_idxs):
     dup = []
@@ -282,7 +299,7 @@ def _log_probs_debug(step, beam_size, d_factor, beam_log_probs, log_probs, scram
     res = res[:, 0, :, :].contiguous()
     res = res.view(-1, vocab_size)
 
-    diff = torch.gt(torch.abs(torch.add(res, -beam_log_probs)), 1e-6)
+    diff = torch.gt(torch.abs(torch.add(res, -beam_log_probs)), 1e-10)
 
     # diff = torch.ne(res, beam_log_probs)
     resdiff = res[diff]
@@ -311,7 +328,8 @@ def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor, scramble_idx
     # print('----Debugging scrabmle in step', step)
     res = input.view(-1, beam_size)    # [2,1]
     # print('    res.shape', res.shape)
-    B = res.shape[0]
+    # print('    select_idxs', input)
+    B = res.shape[0] # B = batch_size
 
     if B * d_factor == scramble_idxs.shape[0]:
         offset = (torch.arange(B) * beam_size).view(-1, 1)
@@ -325,29 +343,40 @@ def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor, scramble_idx
         return res, scramble_idxs
     else:
         # get indices of remaining targets in original, unscrambled order
-        rem_tgts = res[:, 0] // beam_size # remaining targets
+        # ***assume rem_tgts is in ascending order****
+        # e.g. d_factor = 2, beam_size = 10
+        # scramble_idxs = [4, 2, 0, 5, 1, 3]
+        # res = [[0,2,4,5,6,7,8,7,8,9],[21,24,22,25,26,24,28,29,29,22]]
+        rem_tgts = res[:, 0] // beam_size # remaining targets [0, 2]
         rem_tgts_idxs = ((rem_tgts.repeat_interleave(d_factor, dim=0) * d_factor) \
-            .view(-1, d_factor) + torch.arange(d_factor)).view(-1)
+            .view(-1, d_factor) + torch.arange(d_factor)).view(-1) #[0,1,4,5]
 
         # get new scramble idxs given old scramble idxs and remaining targets
-        rem_tgts_idx_map = torch.ones(scramble_idxs.shape[0], dtype=torch.long) * -1
+        #
+        old_scr_len = scramble_idxs.shape[0]
+        rem_tgts_idx_map = torch.ones(old_scr_len, dtype=torch.long) * -1
         for i, x in enumerate(rem_tgts_idxs):
-            rem_tgts_idx_map[x] = i
-        new_scramble_idxs = []
-        for i, x in enumerate(scramble_idxs):
-            if rem_tgts_idx_map[x] != -1:
-                new_scramble_idxs.append(rem_tgts_idx_map[x])
-        new_scramble_idxs = torch.tensor(new_scramble_idxs)
+            rem_tgts_idx_map[x] = i                           # [0,1,-1,-1,2,3]
+        scrambled_rem_tgts = rem_tgts_idx_map[scramble_idxs]  # [2,-1,0,3,1,-1]
+        rem_mask = rem_tgts_idx_map[scramble_idxs] != -1      # [1, 0,1,1,1, 0]
+        new_scramble_idxs = scrambled_rem_tgts[rem_mask]          #[2,0,3,1]
+        filtered_sel_idxs = rem_mask.nonzero().view(-1)  #[0,2,3,4]
 
-        # filter out old scramble idxs of remaining targets
-        scramble_mask = rem_tgts_idx_map[scramble_idxs] != -1
-        filtered_scramble_idxs = scramble_idxs[scramble_mask]
+        # new_scramble_idxs = []
+        # for i, x in enumerate(scramble_idxs):
+        #     if rem_tgts_idx_map[x] != -1:
+        #         new_scramble_idxs.append(rem_tgts_idx_map[x])
+        # new_scramble_idxs = torch.tensor(new_scramble_idxs)
 
-        offset = (rem_tgts * beam_size).view(-1, 1)
-        res -= offset
+        # e.g.     res = [[0,2,4,5,6,7,8,7,8,9],[21,24,22,25,26,24,28,29,29,22]]
+        offset = (rem_tgts * beam_size).view(-1, 1)                # [[0], [20]]
+        res -= offset             #[[0,2,4,5,6,7,8,7,8,9],[1,4,2,5,6,4,8,9,9,2]]
         res = res.repeat_interleave(d_factor, dim=0) \
                  .index_select(0, new_scramble_idxs)
-        offset = (filtered_scramble_idxs * beam_size).view(-1, 1)
+                                          #[[0,2...],[0,2...],[1,4...],[1,4...]]
+                                          #[[1,4...],[0,2...],[1,4...],[0,2...]]
+        offset = (filtered_sel_idxs * beam_size).view(-1, 1)
+                                                #[0,2,3,4]->[[0],[20],[30],[40]]
         res += offset
         res = res.view(-1)
 

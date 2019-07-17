@@ -45,8 +45,9 @@ class BasicPragmatics(object):
 
     def inference(self, s0_log_probs):
         # issue is now fixed, problem was because s0_log_probs was not normalized
+        s0_log_probs = s0_log_probs.type(torch.float)
         l1_log_probs = self.l1(s0_log_probs)
-        res = self.s1(s0_log_probs, l1_log_probs)
+        res = self.s1(s0_log_probs, l1_log_probs).type(torch.float)
         return res
 
 
