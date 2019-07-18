@@ -95,7 +95,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return preds
 
     def summarize_with_s0(self, src, beam_size=1, n_best=1):
-        self._log('==== Beginning Summary with S0 ====')
+        self._log('==== Beginning Summary with S0 ====', logging.INFO)
         preds = []
         #all_log_probs = []
         #curr_preds = []
@@ -118,21 +118,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     beam_size=beam_size)
 
                 for step in range(max_length):
-                    self._log('---- step {} ----'.format(step), logging.INFO)
-                    self._log('    beam.curr_pred {}'.format(beam.current_pred.view([-1])))
                     decoder_input = beam.current_pred
                     beam_batch_offset = beam.batch_offset
-                    self._log('    beam.batch_offset {}'.format(beam_batch_offset))
 
                     log_probs, attn = s0.decode(decoder_input, batch, step, \
                         beam_batch_offset)
 
-                    self._log('    log_probs\n{}'.format(log_probs[:,:6]), logging.INFO)
-
                     beam.advance(log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
-                    self._log('    beam is finished {}'.format(any_beam_is_finished))
                     if any_beam_is_finished:
                         beam.update_finished()
                         if beam.is_done:
@@ -141,14 +135,12 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # NOTE: max select_idx is bound by num of remaining
                     # unfinished sentences
                     select_indices = beam.current_origin
-                    self._log('    sel_idxs {}'.format(select_indices))
 
                     if any_beam_is_finished:
                         s0.enc_states_rearrange(select_indices)
                         s0.batch_rearrange(batch, select_indices)
 
                     s0.dec_states_rearrange(select_indices)
-                    self._log('---------------')
                 # end for step
 
                 batch_preds = self.itos(beam.predictions, batch)
@@ -173,7 +165,6 @@ class ONMTSummaryRSA(BatchBeamRSA):
             for batch in s0.data_iter:
                 scramble_idxs = batch.indices
 
-                self._log('-------Scramble idxs {}\n'.format(scramble_idxs))
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
@@ -198,16 +189,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     self.distractor.d_factor))
 
                 for step in range(max_length):
-                    self._log('---- step {} ----'.format(step), logging.INFO)
-                    self._log('    beam.curr_pred {}'.format(beam.current_pred.view([-1])))
-
                     decoder_input = _reshape_beam2dec(beam.current_pred,
                         beam_size, d_factor, scramble_idxs)
-
-                    self._log('    decoder_input {}'.format(decoder_input.view([-1])))
-
-                    self._log('    beam.batch_offset {}'.format(beam.batch_offset))
-                    self._log('    batch_offset {}'.format(batch_offset))
 
                     log_probs, attn = s0.decode(
                         input=decoder_input,
@@ -216,13 +199,11 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         beam_batch_offset=batch_offset)
                     # log_probs.shape = [B*d*b, V]
 
-                    self._log('    log_probs\n{}'.format(log_probs[:,0:6]), logging.INFO)
-
                     s0_log_probs = _reshape_dec2prag(log_probs, beam_size,
                         d_factor, scramble_idxs)
                     # s0_log_probs.shape = [B*b, d, V]
 
-                    # s1_log_probs = s0_log_probs
+                    # s1_log_probs = s0_log_probs # for debug
                     s1_log_probs = self.pragmatics.inference(s0_log_probs)
                     # s1_log_probs.shape = [B*b, d, V]
 
@@ -236,24 +217,20 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     beam.advance(beam_log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
-                    self._log('    beam is finished {}'.format(any_beam_is_finished))
                     if any_beam_is_finished:
                         beam.update_finished()
                         if beam.is_done:
                             break
 
-                    self._log('    sel_idx before {}'.format(beam.current_origin))
                     select_indices, scramble_idxs, batch_offset = \
                         _reshape_select_idxs_and_rescramble(
                             beam.current_origin, beam_size, d_factor,
                             scramble_idxs, batch_offset, step=step)
-                    self._log('    sel_idx after {}'.format(select_indices))
 
                     if any_beam_is_finished:
                         s0.enc_states_rearrange(select_indices)
                         s0.batch_rearrange(batch, select_indices)
                     s0.dec_states_rearrange(select_indices)
-                    self._log('---------------')
                 # end for step
 
                 batch_preds = self.itos(beam.predictions, batch, reordered=True, d_factor=d_factor)
