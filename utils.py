@@ -28,12 +28,11 @@ def display(names, preds):
     num_examples = len(preds[0])
     for i in range(num_examples):
         for j, s in enumerate(preds):
-            print('--------['+names[j]+']--------')
             if isinstance(s[i], list):
                 s = s[i][0]
             elif isinstance(s[i], str):
                 s = s[i]
             else:
                 print('Error in pred type!')
-            print(s.strip())
-        print('=======================')
+            print(names[j] + ': ' + s.strip())
+        print('')
