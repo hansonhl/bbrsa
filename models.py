@@ -2,6 +2,7 @@ import torch
 from abstract_classes import LiteralSpeaker
 
 DEFAULT_CONFIG_DIR = 'summary_inference2.yml'
+ONMT_DIR = '../myOpenNMT'
 
 class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_dir=DEFAULT_CONFIG_DIR):
@@ -12,7 +13,6 @@ class ONMTSummarizer(LiteralSpeaker):
         import onmt.opts as opts
         from onmt.translate.translator import build_translator
         from onmt.utils.misc import tile
-
 
         parser = ArgumentParser(default_config_files=[config_dir])
         opts.translate_opts(parser)

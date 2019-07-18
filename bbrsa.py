@@ -214,8 +214,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     s0.dec_states_rearrange(select_indices)
                 # end for step
 
-                batch_preds = self.itos(beam.predictions, batch, reordered=True,
-                    d_factor=d_factor)
+                batch_preds = self.itos(beam.predictions, batch, reordered=True, d_factor=d_factor)
                 preds += batch_preds
 
             # end for batch
@@ -271,8 +270,7 @@ def _reshape_attn(input, beam_size, d_factor, scramble_idxs):
     return res
 
 
-def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor,
-    scramble_idxs, step=None):
+def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor, scramble_idxs, step=None):
     """Reshape select indices from beam for rearranging states"""
     res = input.view(-1, beam_size)    # [2,1]
     B = res.shape[0] # B = batch_size
