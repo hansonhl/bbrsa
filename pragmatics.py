@@ -4,10 +4,18 @@ from scipy.special import logsumexp
 
 class NextExampleDistractor(object):
     """Use next example in batch as distractor"""
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, logger=None):
+        self.logger = logger
         self.orig_batch_size = batch_size
         self.d_factor = 2
         self.new_batch_size = self.d_factor * batch_size
+
+    def _log(self, message, level=None):
+        if self.logger is None:
+            print(message)
+        else:
+            level = logging.DEBUG if level is None else level
+            self.logger.log(level, message)
 
     def generate(self, src):
         new_src = []
@@ -19,8 +27,16 @@ class NextExampleDistractor(object):
         return new_src, self.new_batch_size
 
 class BasicPragmatics(object):
-    def __init__(self, alpha=1):
+    def __init__(self, alpha=1, logger=None):
+        self.logger = logger
         self.alpha = alpha
+
+    def _log(self, message, level=None):
+        if self.logger is None:
+            print(message)
+        else:
+            level = logging.DEBUG if level is None else level
+            self.logger.log(level, message)
 
     def l1(self, log_probs):
         """Pragmatic listener bases on top of s0"""

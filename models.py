@@ -1,25 +1,36 @@
 import torch
+import logging
 from abstract_classes import LiteralSpeaker
 
-DEFAULT_CONFIG_DIR = 'summary_inference2.yml'
+DEFAULT_CONFIG_PATH = 'summary_inference2.yml'
 ONMT_DIR = '../myOpenNMT'
+INFO = logging.INFO
+DEBUG = logging.DEBUG
 
 class ONMTSummarizer(LiteralSpeaker):
-    def __init__(self, config_dir=DEFAULT_CONFIG_DIR):
+    def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
+        self.logger = logger
 
-        print('Configuring summary model...')
+        self._log('Configuring summary model...', logging.INFO)
 
         from onmt.utils.parse import ArgumentParser
         import onmt.opts as opts
         from onmt.translate.translator import build_translator
         from onmt.utils.misc import tile
 
-        parser = ArgumentParser(default_config_files=[config_dir])
+        self._log('Import successful', logging.INFO)
+
+        parser = ArgumentParser(default_config_files=[config_path])
+        opts.config_opts(parser)
         opts.translate_opts(parser)
-        self.opt = parser.parse_args()
+
+        self.opt = parser.parse_args(['-config', config_path])
+
         ArgumentParser.validate_translate_opts(self.opt)
-        self.translator = build_translator(self.opt, report_score=True)
-        print('Finished configuration.\n')
+        self.translator = build_translator(self.opt, report_score=True, logger=logger)
+
+        self._log('Finished configuration.\n', logging.INFO)
+
 
         # for batch
         self.data, self.data_iter = None, None
@@ -34,6 +45,13 @@ class ONMTSummarizer(LiteralSpeaker):
 
         # for augmentation
         self.tile = tile
+
+    def _log(self, message, level=None):
+        if self.logger is None:
+            print(message)
+        else:
+            level = logging.DEBUG if level is None else level
+            self.logger.log(level, message)
 
     def init_batch_iterator(self, src, batch_size=None):
         """ Initiates batch iterator. The iterator also maps raw text to idx's.
@@ -67,10 +85,10 @@ class ONMTSummarizer(LiteralSpeaker):
             shuffle=False
         )
 
-        # build translator
-        self.xlation_builder = TranslationBuilder(
-            self.data, T.fields, T.n_best, T.replace_unk, None,
-            T.phrase_table)
+        # # build translator
+        # self.xlation_builder = TranslationBuilder(
+        #     self.data, T.fields, T.n_best, T.replace_unk, None,
+        #     T.phrase_table)
 
     def encode(self, batch):
         T = self.translator
