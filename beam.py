@@ -3,7 +3,9 @@ from pragmatics import scramble2tgt
 
 class ONMTBeam(Beam):
     def __init__(self, onmt_summarizer, batch_size, beam_size=None,
-        n_best=None, distractor=None, scramble_idxs=None):
+        n_best=None, distractor=None, scramble_idxs=None, logger=None):
+        super().__init__(logger)
+        
         from onmt.translate.beam_search import BeamSearch
 
         s = onmt_summarizer

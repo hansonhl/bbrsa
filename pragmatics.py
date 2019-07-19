@@ -1,21 +1,19 @@
 import torch
 import numpy as np
+import logging
+from abstract_classes import BatchDistractor, Pragmatics
 from scipy.special import logsumexp
 
-class NextExampleDistractor(object):
+
+class NextExampleDistractor(BatchDistractor):
     """Use next example in batch as distractor"""
     def __init__(self, batch_size, logger=None):
-        self.logger = logger
-        self.orig_batch_size = batch_size
-        self.d_factor = 2
-        self.new_batch_size = self.d_factor * batch_size
+        super().__init__(batch_size, logger)
+        self._d_factor = 2
 
-    def _log(self, message, level=None):
-        if self.logger is None:
-            print(message)
-        else:
-            level = logging.DEBUG if level is None else level
-            self.logger.log(level, message)
+    @property
+    def d_factor(self):
+        return self._d_factor
 
     def generate(self, src):
         new_src = []
@@ -26,17 +24,51 @@ class NextExampleDistractor(object):
                 new_src.append(batch[next_id])
         return new_src, self.new_batch_size
 
-class BasicPragmatics(object):
-    def __init__(self, alpha=1, logger=None):
-        self.logger = logger
-        self.alpha = alpha
+class IdenticalDistractor(BatchDistractor):
+    """Use the sample itself as distractor"""
+    def __init__(self, batch_size, logger=None):
+        super().__init__(batch_size, logger)
+        self._d_factor = 2
 
-    def _log(self, message, level=None):
-        if self.logger is None:
-            print(message)
-        else:
-            level = logging.DEBUG if level is None else level
-            self.logger.log(level, message)
+    @property
+    def d_factor(self):
+        return self._d_factor
+
+    def generate(self, src):
+        new_src = []
+        for x in src:
+            new_src.append(x)
+            new_src.append(x)
+        return new_src, self.new_batch_size
+
+class NextNDistractor(BatchDistractor):
+    """Use next N examples in batch as distractor"""
+    def __init__(self, batch_size, N, logger=None):
+        assert batch_size >= N+1, 'Invalid N!'
+        super().__init__(batch_size, logger)
+        self._d_factor = N+1
+
+    @property
+    def d_factor(self):
+        return self._d_factor
+
+    def generate(self, src):
+        new_src = []
+        for batch in _chunks(src, self.orig_batch_size):
+            if len(batch) < self.d_factor:
+                self._log('Dropping this batch that is too short', logging.WARNING)
+                continue
+            for i, x in enumerate(batch):
+                ids = [j if j < len(batch) else j - len(batch) \
+                    for j in range(i, i + self.d_factor)]
+                new_src += [batch[j] for j in ids]
+
+        return new_src, self.new_batch_size
+
+class BasicPragmatics(Pragmatics):
+    def __init__(self, alpha=1, logger=None):
+        super().__init__(logger)
+        self.alpha = alpha
 
     def l1(self, log_probs):
         """Pragmatic listener bases on top of s0"""
@@ -65,20 +97,6 @@ class BasicPragmatics(object):
         l1_log_probs = self.l1(s0_log_probs)
         res = self.s1(s0_log_probs, l1_log_probs).type(torch.float)
         return res
-
-class IdenticalDistractor(object):
-    """Use the sample itself as distractor"""
-    def __init__(self, batch_size):
-        self.orig_batch_size = batch_size
-        self.d_factor = 2
-        self.new_batch_size = self.d_factor * batch_size
-
-    def generate(self, src):
-        new_src = []
-        for x in src:
-            new_src.append(x)
-            new_src.append(x)
-        return new_src, self.new_batch_size
 
 
 def _chunks(l, n):

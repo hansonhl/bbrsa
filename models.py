@@ -9,7 +9,7 @@ DEBUG = logging.DEBUG
 
 class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
-        self.logger = logger
+        super().__init__(logger)
 
         self._log('Configuring summary model...', logging.INFO)
 

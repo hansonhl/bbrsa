@@ -1,6 +1,21 @@
 from abc import ABC, abstractmethod, abstractproperty
 
-class LiteralSpeaker(ABC):
+class BBRSAABC(ABC):
+    def __init__(self, logger=None):
+        self.logger = logger
+
+    def _log(self, message, level=None):
+        if self.logger is None:
+            print(message)
+        else:
+            level = logging.DEBUG if level is None else level
+            self.logger.log(level, message)
+
+
+class LiteralSpeaker(BBRSAABC):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+
     @abstractmethod
     def init_batch_iterator(self, src):
         pass
@@ -49,7 +64,10 @@ class LiteralSpeaker(ABC):
     def set_configs(self, **kwargs):
         pass
 
-class Beam(ABC):
+class Beam(BBRSAABC):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+    
     @abstractmethod
     def advance(self, log_probs, attn):
         pass
@@ -81,3 +99,29 @@ class Beam(ABC):
     @abstractproperty
     def batch_offset(self):
         pass
+
+class BatchDistractor(BBRSAABC):
+    def __init__(self, batch_size, logger=None):
+        super().__init__(logger)
+        self.orig_batch_size = batch_size
+
+    @abstractmethod
+    def generate(self, src):
+        return src
+
+    # I make this an abstract property so that it is mandatory
+    @abstractproperty
+    def d_factor(self):
+        return 1
+
+    @property
+    def new_batch_size(self):
+        return self.d_factor * self.orig_batch_size
+
+class Pragmatics(BBRSAABC):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+
+    @abstractproperty
+    def inference(self, probs):
+        return probs

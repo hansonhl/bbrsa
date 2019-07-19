@@ -112,6 +112,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
                 max_length = s0.max_output_length
                 beam_batch_size = batch.batch_size
+
                 # actual batch size, batch may be smaller than max batch size
 
                 beam = ONMTBeam(s0, batch_size=beam_batch_size, \
@@ -177,6 +178,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # give the batch size from the perspective of the beam.
                 # The elements in the beam are in their original unscrambled order
                 beam_batch_size = batch.batch_size // d_factor
+                self._log('batch.batch_size is {}'.format(batch.batch_size), logging.INFO)
 
                 beam = ONMTBeam(s0,
                     batch_size=beam_batch_size,
