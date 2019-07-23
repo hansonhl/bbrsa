@@ -67,7 +67,7 @@ class LiteralSpeaker(BBRSAABC):
 class Beam(BBRSAABC):
     def __init__(self, logger=None):
         super().__init__(logger)
-    
+
     @abstractmethod
     def advance(self, log_probs, attn):
         pass
@@ -125,3 +125,6 @@ class Pragmatics(BBRSAABC):
     @abstractproperty
     def inference(self, probs):
         return probs
+
+    def clear_mem(self):
+        pass

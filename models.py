@@ -46,21 +46,21 @@ class ONMTSummarizer(LiteralSpeaker):
         # for augmentation
         self.tile = tile
 
-    def _log(self, message, level=None):
-        if self.logger is None:
-            print(message)
-        else:
-            level = logging.DEBUG if level is None else level
-            self.logger.log(level, message)
-
-    def init_batch_iterator(self, src, batch_size=None):
-        """ Initiates batch iterator. The iterator also maps raw text to idx's.
+    def init_batch_iterator(self, src, batch_size=None, truncate=None):
+        """ Initiates batch iterator. The iterator maps raw text to idx's.
 
         Args:
             src: a python list of raw input text to be summarized
         """
         import onmt.inputters as inputters
         from onmt.translate import TranslationBuilder
+
+        if truncate is not None:
+            src = _truncate(src, truncate)
+            self._log('Truncated src to length {}'.format(truncate), logging.INFO)
+            self._log('len of first element is {}'.format(len(src[0].split())))
+
+        batch_size = self.batch_size if batch_size is None else batch_size
 
         T = self.translator
         self.data = inputters.Dataset(
@@ -71,9 +71,6 @@ class ONMTSummarizer(LiteralSpeaker):
             sort_key=inputters.str2sortkey[T.data_type],
             filter_pred=T._filter_pred
         )
-
-        if batch_size is not None:
-            self.batch_size = batch_size
 
         self.data_iter = inputters.OrderedIterator(
             dataset=self.data,
@@ -167,3 +164,10 @@ class ONMTSummarizer(LiteralSpeaker):
     def set_configs(self, beam_size=1, n_best=1):
         self.translator.beam_size = beam_size
         self.translator.n_best = n_best
+
+def _truncate(src, len):
+    """truncate each string in src to a given length
+
+    Assume each element in src is tokenized, seperated by spaces
+    """
+    return [' '.join(l.split()[:len]) for l in src]

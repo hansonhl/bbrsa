@@ -94,15 +94,16 @@ class ONMTSummaryRSA(BatchBeamRSA):
             preds = [preds[i] for i in reorder_idxs]
         return preds
 
-    def summarize_with_s0(self, src, beam_size=1, n_best=1):
-        self._log('==== Beginning Summary with S0 ====', logging.INFO)
-        preds = []
-        #all_log_probs = []
-        #curr_preds = []
+    def _run_s0(self, src, beam_size=1, n_best=1, truncate=None, dump=None):
         with torch.no_grad():
+            preds = []
+            # all_log_probs = []
+            # all_curr_preds = []
             s0 = self.s0
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             s0.init_batch_iterator(src)
+            if dump is not None:
+                dump.init(src[0])
 
             for batch in s0.data_iter:
                 s0.encode(batch)
@@ -125,7 +126,14 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     log_probs, attn = s0.decode(decoder_input, batch, step, \
                         beam_batch_offset)
 
+                    # self._log('attn_shape: {}'.format(attn.shape))
+                    # self._log('log_probs.shape: {}'.format(log_probs.shape))
+                    # self._log('argmax of log_probs: {}'.format())
+
                     beam.advance(log_probs, attn)
+
+                    # self._log('step {}, topk_probs {}'.format(step, beam.beam.topk_log_probs))
+                    # self._log('step {}, attn {}'.format(step, attn))
 
                     any_beam_is_finished = beam.any_beam_is_finished
                     if any_beam_is_finished:
@@ -133,9 +141,14 @@ class ONMTSummaryRSA(BatchBeamRSA):
                         if beam.is_done:
                             break
 
+                    if dump is not None:
+                        dump.advance(attn, beam.current_pred)
+
                     # NOTE: max select_idx is bound by num of remaining
                     # unfinished sentences
                     select_indices = beam.current_origin
+
+                    # self._log('Step {}, curr_preds: {}'.format(step, beam.current_pred.view(-1)))
 
                     if any_beam_is_finished:
                         s0.enc_states_rearrange(select_indices)
@@ -143,25 +156,46 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
                     s0.dec_states_rearrange(select_indices)
                 # end for step
+                # self._log('Final predictions: {}'.format(beam.predictions[0][0]))
 
                 batch_preds = self.itos(beam.predictions, batch)
                 preds += batch_preds
+            # end for batch
+            if dump is not None:
+                dump.finalize(preds[0][0])
+            return preds, beam
+        # end with torch.no_grad()
 
-            # end for batch in iter
-        # end with no_grad
+    def summarize_with_s0(self, src, beam_size=1, n_best=1, truncate=None, dump=None):
+        self._log('==== Beginning Summary with S0 ====', logging.INFO)
+
+        preds, _ = self._run_s0(
+            src,
+            beam_size=beam_size,
+            n_best=n_best,
+            truncate=truncate,
+            dump=dump)
+
+        if dump is not None:
+            self._log('dump.tgt len: {}, dump.attns len:{}' \
+                .format(len(dump.tgt), len(dump.attns)))
+            self._log('src: {}, tgt: {}'.format(dump.src, dump.tgt))
         return preds #, all_log_probs, curr_preds
 
-    def summarize_with_distractor(self, src, beam_size=1, n_best=1):
+    def summarize_with_distractor(self, src, beam_size=1, n_best=1, truncate=None):
         """Summarize source text using RSA."""
         self._log('==== Beginning Summary with distractor ====')
         assert self.distractor is not None, 'Must specify distractor!'
+        assert self.pragmatics is not None, 'Must specify pragmatics'
         preds = []
+        self.pragmatics.clear_mem()
+
         with torch.no_grad():
             s0 = self.s0
             d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             src, batch_size = self.distractor.generate(src)
-            s0.init_batch_iterator(src, batch_size)
+            s0.init_batch_iterator(src, batch_size, truncate)
 
             for batch in s0.data_iter:
                 scramble_idxs = batch.indices
@@ -178,7 +212,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # give the batch size from the perspective of the beam.
                 # The elements in the beam are in their original unscrambled order
                 beam_batch_size = batch.batch_size // d_factor
-                self._log('batch.batch_size is {}'.format(batch.batch_size), logging.INFO)
+                # self._log('batch.batch_size is {}'.format(batch.batch_size), logging.INFO)
 
                 beam = ONMTBeam(s0,
                     batch_size=beam_batch_size,
@@ -191,6 +225,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     self.distractor.d_factor))
 
                 for step in range(max_length):
+                    # self._log('----step {}----'.format(step))
                     decoder_input = _reshape_beam2dec(beam.current_pred,
                         beam_size, d_factor, scramble_idxs)
 
@@ -203,10 +238,12 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
                     s0_log_probs = _reshape_dec2prag(log_probs, beam_size,
                         d_factor, scramble_idxs)
-                    # s0_log_probs.shape = [B*b, d, V]
+                    # s0_log_probs.shape = [B*b, d, V] (B*b ordered)
 
                     # s1_log_probs = s0_log_probs # for debug
-                    s1_log_probs = self.pragmatics.inference(s0_log_probs)
+                    s1_log_probs = self.pragmatics.inference(s0_log_probs,
+                        beam.current_origin, beam.current_pred.view(-1))
+
                     # s1_log_probs.shape = [B*b, d, V]
 
                     beam_log_probs = _reshape_prag2beam(s1_log_probs, beam_size,
