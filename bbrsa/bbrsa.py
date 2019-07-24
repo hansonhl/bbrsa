@@ -4,8 +4,9 @@ import torch
 import logging
 from abc import ABC, abstractmethod
 
-from beam import ONMTBeam
-from pragmatics import NextExampleDistractor, BasicPragmatics, idx_remap, scramble2tgt
+from bbrsa.beam import ONMTBeam
+from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics
+from bbrsa.utils import idx_remap, scramble2tgt
 from torchtext.data.batch import Batch as TorchBatch
 
 class BatchBeamRSA(ABC):
@@ -123,8 +124,11 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     decoder_input = beam.current_pred
                     beam_batch_offset = beam.batch_offset
 
-                    log_probs, attn = s0.decode(decoder_input, batch, step, \
-                        beam_batch_offset)
+                    log_probs, attn = s0.decode(
+                        input=decoder_input,
+                        batch=batch,
+                        step=step,
+                        beam_batch_offset=beam_batch_offset)
 
                     # self._log('attn_shape: {}'.format(attn.shape))
                     # self._log('log_probs.shape: {}'.format(log_probs.shape))
@@ -195,7 +199,10 @@ class ONMTSummaryRSA(BatchBeamRSA):
             d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             src, batch_size = self.distractor.generate(src)
-            s0.init_batch_iterator(src, batch_size, truncate)
+            s0.init_batch_iterator(
+                src=src,
+                batch_size=batch_size,
+                truncate=truncate)
 
             for batch in s0.data_iter:
                 scramble_idxs = batch.indices

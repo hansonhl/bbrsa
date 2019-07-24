@@ -1,19 +1,18 @@
 import sys, os, time, logging
+import bbrsa
 
-from bbrsa import ONMTSummaryRSA
-
-from models import ONMTSummarizer
-from pragmatics import NextExampleDistractor, BasicPragmatics
-from pragmatics import IdenticalDistractor, NextNDistractor
-from utils import init_logger, display
+from bbrsa.bbrsa import ONMTSummaryRSA
+from bbrsa.summarizers import ONMTSummarizer
+from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics
+from bbrsa.pragmatics import IdenticalDistractor, NextNDistractor
+from bbrsa.utils import init_logger, display
 
 src_file = 'data/cnndm_val_first5_src.txt'
 tgt_file = 'data/cnndm_val_first5_tgt.txt'
 res_file = 'results/5_articles.txt'
-ONMT_DIR = '../myOpenNMT'
 
 def main():
-    sys.path.insert(0, os.path.abspath(ONMT_DIR))
+    sys.path.insert(0, os.path.abspath(bbrsa.ONMT_DIR))
     with open(src_file, 'r') as f:
         src = f.readlines()
     with open(tgt_file, 'r') as f:
@@ -21,7 +20,7 @@ def main():
 
     s0 = ONMTSummarizer()
     pragmatics = BasicPragmatics(alpha=2)
-    distractor = NextNDistractor(batch_size=s0.opt.batch_size, N=1)
+    distractor = NextNDistractor(batch_size=s0.default_batch_size, N=1)
     model = ONMTSummaryRSA(s0, pragmatics, distractor)
 
     print('----- Starting summary with distractor')
@@ -38,7 +37,7 @@ def main():
     #
     # s0_2 = ONMTSummarizer()
     # pragmatics = BasicPragmatics(alpha=2)
-    # distractor = IdenticalDistractor(batch_size=s0.opt.batch_size)
+    # distractor = IdenticalDistractor(batch_size=s0.default_batch_size)
     # model = ONMTSummaryRSA(s0_2, pragmatics, distractor)
     # print('----- Starting summary with identical distractor')
     # start_time = time.time()

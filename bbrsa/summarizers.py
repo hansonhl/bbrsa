@@ -1,8 +1,9 @@
 import torch
 import logging
-from abstract_classes import LiteralSpeaker
+from bbrsa.abstract_classes import LiteralSpeaker
+from bbrsa.utils import onmt_translator_builder
 
-DEFAULT_CONFIG_PATH = 'summary_inference2.yml'
+DEFAULT_CONFIG_PATH = 'onmt_configs/cnndm.yml'
 ONMT_DIR = '../myOpenNMT'
 INFO = logging.INFO
 DEBUG = logging.DEBUG
@@ -10,34 +11,16 @@ DEBUG = logging.DEBUG
 class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
         super().__init__(logger)
-
-        self._log('Configuring summary model...', logging.INFO)
-
-        from onmt.utils.parse import ArgumentParser
-        import onmt.opts as opts
-        from onmt.translate.translator import build_translator
         from onmt.utils.misc import tile
 
-        self._log('Import successful', logging.INFO)
-
-        parser = ArgumentParser(default_config_files=[config_path])
-        opts.config_opts(parser)
-        opts.translate_opts(parser)
-
-        self.opt = parser.parse_args(['-config', config_path])
-
-        ArgumentParser.validate_translate_opts(self.opt)
-        self.translator = build_translator(self.opt, report_score=True, logger=logger)
-
-        self._log('Finished configuration.\n', logging.INFO)
-
+        self.translator, opt = onmt_translator_builder(config_path, logger)
 
         # for batch
         self.data, self.data_iter = None, None
-        self.batch_size = self.opt.batch_size
+        self.default_batch_size = opt.batch_size
 
         # Encoder representations
-        self.src, self.enc_states, self.memory_bank, self.src_lengths = \
+        self.src, self.enc_states, self.memory_bank, self.memory_lengths = \
             None, None, None, None
         self.memory_lengths = None
         self.mb_device = None
@@ -46,7 +29,7 @@ class ONMTSummarizer(LiteralSpeaker):
         # for augmentation
         self.tile = tile
 
-    def init_batch_iterator(self, src, batch_size=None, truncate=None):
+    def init_batch_iterator(self, src, tgt=None, batch_size=None, truncate=None):
         """ Initiates batch iterator. The iterator maps raw text to idx's.
 
         Args:
@@ -60,14 +43,14 @@ class ONMTSummarizer(LiteralSpeaker):
             self._log('Truncated src to length {}'.format(truncate), logging.INFO)
             self._log('len of first element is {}'.format(len(src[0].split())))
 
-        batch_size = self.batch_size if batch_size is None else batch_size
+        batch_size = self.default_batch_size if batch_size is None else batch_size
 
         T = self.translator
         self.data = inputters.Dataset(
             T.fields,
-            readers=[T.src_reader],
-            data=[("src", src)],
-            dirs=[None],
+            readers=[T.src_reader, T.tgt_reader] if tgt else [T.src_reader],
+            data=[("src", src), ("tgt", tgt)] if tgt else [("src", src)],
+            dirs=[None, None] if tgt else [None],
             sort_key=inputters.str2sortkey[T.data_type],
             filter_pred=T._filter_pred
         )
@@ -75,17 +58,12 @@ class ONMTSummarizer(LiteralSpeaker):
         self.data_iter = inputters.OrderedIterator(
             dataset=self.data,
             device=T._dev,
-            batch_size=self.batch_size,
+            batch_size=batch_size,
             train=False,
             sort=False,
             sort_within_batch=True,
             shuffle=False
         )
-
-        # # build translator
-        # self.xlation_builder = TranslationBuilder(
-        #     self.data, T.fields, T.n_best, T.replace_unk, None,
-        #     T.phrase_table)
 
     def encode(self, batch):
         T = self.translator
@@ -93,7 +71,7 @@ class ONMTSummarizer(LiteralSpeaker):
 
         T.model.decoder.init_state(src, memory_bank, enc_states)
 
-        self.src, self.enc_states, self.memory_bank, self.src_lengths = \
+        self.src, self.enc_states, self.memory_bank, self.memory_lengths = \
             src, enc_states, memory_bank, src_lengths
 
     def batch_augment(self, batch, beam_size):
@@ -111,7 +89,7 @@ class ONMTSummarizer(LiteralSpeaker):
         else:
             self.memory_bank = self.tile(self.memory_bank, beam_size, dim=1)
             self.mb_device = self.memory_bank.device
-        self.memory_lengths = self.tile(self.src_lengths, beam_size)
+        self.memory_lengths = self.tile(self.memory_lengths, beam_size)
 
     def dec_states_augment(self, beam_size):
         T = self.translator
@@ -126,22 +104,25 @@ class ONMTSummarizer(LiteralSpeaker):
     def max_output_length(self):
         return self.translator.max_length
 
-    def decode(self, input, batch, step, beam_batch_offset=None):
+    def decode(self, input, batch, step=None, beam_batch_offset=None):
         T = self.translator
+
         log_probs, attn = T._decode_and_generate(
             input,
             self.memory_bank,
             batch,
             self.data.src_vocabs,
             memory_lengths=self.memory_lengths,
-            src_map=self.src_map,
+            src_map=self.src_map if step is not None else batch.src_map,
             step=step,
             batch_offset=beam_batch_offset)
         # normalize
-        lse = torch.logsumexp(log_probs, dim=1, keepdim=True)
-        log_probs = log_probs - lse
+        if step is not None:
+            lse = torch.logsumexp(log_probs, dim=1, keepdim=True)
+            log_probs = log_probs - lse
 
         return log_probs, attn
+
 
     def batch_rearrange(self, batch, select_indices):
         if self.src_map is not None:

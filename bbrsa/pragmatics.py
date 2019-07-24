@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import logging
-from abstract_classes import BatchDistractor, Pragmatics
+from bbrsa.abstract_classes import BatchDistractor, Pragmatics
 from scipy.special import logsumexp
 
 
@@ -80,7 +80,7 @@ class BasicPragmatics(Pragmatics):
 
         return normalized
 
-    def s1(self, s0_log_probs, l1_log_probs):
+    def s1(self, s0_log_probs, l1_log_probs, *args):
         """Pragmatic speaker"""
         adjusted = self.alpha * l1_log_probs
         isnan_mask = torch.isnan(adjusted)
@@ -100,8 +100,26 @@ class BasicPragmatics(Pragmatics):
         """
         s0_log_probs = s0_log_probs.type(torch.double)
         l1_log_probs = self.l1(s0_log_probs, *args)
-        res = self.s1(s0_log_probs, l1_log_probs).type(torch.float)
+        res = self.s1(s0_log_probs, l1_log_probs, *args).type(torch.float)
         return res
+
+class GrowingAlphaPragmatics(BasicPragmatics):
+    def __init__(self, alpha=1, logger=None):
+        super().__init__(logger)
+        self.alpha = alpha # this alpha is used as final alpha
+        self.l1_prev_prob = None
+
+    def s1(self, s0_log_probs, l1_log_probs):
+        """Pragmatic speaker"""
+        adjusted = self.alpha * l1_log_probs
+        isnan_mask = torch.isnan(adjusted)
+        adjusted[isnan_mask] = float('-inf')
+
+        log_probs = s0_log_probs + adjusted
+
+        lse = torch.logsumexp(log_probs, dim=2, keepdim=True)
+        normalized = log_probs - lse
+        return normalized
 
 class MemoizedListener(BasicPragmatics):
     # TODO: Need to fix - l1_prev_prob should have dimension of [B*b, d]
@@ -154,20 +172,3 @@ def _chunks(l, n):
     # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
     for i in range(0, len(l), n):
         yield l[i:i + n]
-
-def scramble2tgt(idxs, d_factor):
-    """Given scrambling indices, get indices of target examples"""
-    # e.g. input idxs=[1,2,0,3], d_factor=2 -> out [2, 1],
-    # elements 2 and 1 in list [1,2,0,3] are the indices of two targets
-    # respectively, in correct order
-    if isinstance(idxs, torch.Tensor):
-        idxs_len = idxs.shape[0]
-    elif isinstance(idxs, list):
-        idxs_len = len(idxs)
-    scrambled = idx_remap(idxs)
-    return scrambled[torch.arange(0, idxs_len, d_factor)]
-
-def idx_remap(idxs):
-    # e.g. input idxs=[1,2,0,3] -> output [2,0,1,3]
-    inds, perm = torch.sort(idxs)
-    return perm

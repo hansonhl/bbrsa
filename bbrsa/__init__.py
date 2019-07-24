@@ -1,0 +1,1 @@
+ONMT_DIR = '../myOpenNMT'
