@@ -5,7 +5,8 @@ import logging
 from abc import ABC, abstractmethod
 
 from bbrsa.beam import ONMTBeam
-from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics
+from bbrsa.pragmatics import NextExampleDistractor
+from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
 from bbrsa.utils import idx_remap, scramble2tgt
 from torchtext.data.batch import Batch as TorchBatch
 
@@ -248,8 +249,14 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # s0_log_probs.shape = [B*b, d, V] (B*b ordered)
 
                     # s1_log_probs = s0_log_probs # for debug
-                    s1_log_probs = self.pragmatics.inference(s0_log_probs,
-                        beam.current_origin, beam.current_pred.view(-1))
+                    if isinstance(self.pragmatics, GrowingAlphaPragmatics):
+                        s1_log_probs = self.pragmatics.inference(
+                            s0_log_probs, step)
+                    else:
+                        s1_log_probs = self.pragmatics.inference(
+                            s0_log_probs,
+                            beam.current_origin,
+                            beam.current_pred.view(-1))
 
                     # s1_log_probs.shape = [B*b, d, V]
 

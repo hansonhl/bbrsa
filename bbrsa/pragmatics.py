@@ -104,14 +104,17 @@ class BasicPragmatics(Pragmatics):
         return res
 
 class GrowingAlphaPragmatics(BasicPragmatics):
-    def __init__(self, alpha=1, logger=None):
-        super().__init__(logger)
-        self.alpha = alpha # this alpha is used as final alpha
-        self.l1_prev_prob = None
+    def __init__(self, alpha=1., steps=5, logger=None):
+        super().__init__(alpha, logger)
+        # this alpha is used as final alpha
+        self.steps = steps
 
-    def s1(self, s0_log_probs, l1_log_probs):
-        """Pragmatic speaker"""
-        adjusted = self.alpha * l1_log_probs
+    def s1(self, s0_log_probs, l1_log_probs, step):
+        """Pragmatic speake, alpha grows incrementally until it reaches self.alpha"""
+        if step is not None:
+            alpha = max(step, self.steps) / self.steps * self.alpha # grows in  steps
+
+        adjusted = alpha * l1_log_probs
         isnan_mask = torch.isnan(adjusted)
         adjusted[isnan_mask] = float('-inf')
 
@@ -127,8 +130,7 @@ class MemoizedListener(BasicPragmatics):
     #    last timestep. For this I need to add one more argument in l1.
     #    probably use *args in base definition?
     def __init__(self, alpha=1, logger=None):
-        super().__init__(logger)
-        self.alpha = alpha
+        super().__init__(alpha, logger)
         self.l1_prev_prob = None
 
     def clear_mem(self):
