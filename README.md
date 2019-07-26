@@ -3,4 +3,17 @@
 Implementation of the Rational Speech Acts model, using efficient beam search and batched methods, inspired by the OpenNMT framework.
 
 ## Prerequisites
-To use opennmt models, clone the OpenNMT repository locally. As exemplified in main.py and main2.py, add the line ```sys.path.append(os.path.abspath(<LOCAL_ONMT_PATH>))``` before `import onmt`.
+__Dependencies__
+
+```
+pytorch
+numpy
+opennmt
+pytorch-transformers
+
+```
+
+`pytorch-transformers` refers to the Huggingface pytorch implementation of bert.
+See [this link](https://github.com/huggingface/pytorch-transformers) for installation details.
+
+OpenNMT cannot be installed directly through pip. Simply clone the OpenNMT pytorch repository ```git clone https://github.com/OpenNMT/OpenNMT-py``` Then in `bbrsa/__init__.py` set the variable `ONMT_DIR = <path to local OpenNMT repo>`.

@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
-from bbrsa.pragmatics import NextExampleDistractor, IdenticalDistractor, NextNDistractor
+from bbrsa.distractors import NextExampleDistractor, IdenticalDistractor, NextNDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
 from bbrsa.utils import init_logger, display, ProbAttnDump
 
@@ -33,7 +33,7 @@ src = ['police arrested five anti-nuclear protesters friday after they sought to
 'French police arrested five anti-nuclear protesters friday after they sought to disrupt loading of an american antarctic research and supply vessel , a spokesman for the protesters said .'
 """
 # dump = ProbAttnDump()
-model.set_alpha(8)
+model.set_alpha(5)
 s0_pred = model.summarize_with_s0(src, n_best=1, beam_size=20)
 s1_pred = model.summarize_with_distractor(src, beam_size=20)
 #json_file = 'results/test2.json'

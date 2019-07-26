@@ -1,11 +1,10 @@
 import sys, os
-import copy
 import torch
 import logging
 from abc import ABC, abstractmethod
 
 from bbrsa.beam import ONMTBeam
-from bbrsa.pragmatics import NextExampleDistractor
+from bbrsa.distractors import NextExampleDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
 from bbrsa.utils import idx_remap, scramble2tgt
 from torchtext.data.batch import Batch as TorchBatch

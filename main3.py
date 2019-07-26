@@ -3,7 +3,8 @@ import bbrsa
 
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
-from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics, IdenticalDistractor
+from bbrsa.pragmatics import BasicPragmatics
+from bbrsa.distractors import NextExampleDistractor, IdenticalDistractor
 
 src_file = 'data/cnndm_val_first_manip2.txt'
 res_file = 'monday_1000000.txt'

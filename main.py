@@ -5,7 +5,8 @@ import bbrsa
 
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
-from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics
+from bbrsa.pragmatics import BasicPragmatics
+from bbrsa.distractors import NextExampleDistractor
 
 def main():
     # managing package import for OpenNMT

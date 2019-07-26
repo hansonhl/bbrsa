@@ -3,8 +3,8 @@ import bbrsa
 
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
-from bbrsa.pragmatics import NextExampleDistractor, BasicPragmatics
-from bbrsa.pragmatics import IdenticalDistractor, NextNDistractor
+from bbrsa.pragmatics import BasicPragmatics
+from bbrsa.distractors import IdenticalDistractor, NextNDistractor, NextExampleDistractor
 from bbrsa.utils import init_logger, display
 
 src_file = 'data/cnndm_val_first5_src.txt'

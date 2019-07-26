@@ -1,69 +1,7 @@
 import torch
 import numpy as np
 import logging
-from bbrsa.abstract_classes import BatchDistractor, Pragmatics
-from scipy.special import logsumexp
-
-
-class NextExampleDistractor(BatchDistractor):
-    """Use next example in batch as distractor"""
-    def __init__(self, batch_size, logger=None):
-        super().__init__(batch_size, logger)
-        self._d_factor = 2
-
-    @property
-    def d_factor(self):
-        return self._d_factor
-
-    def generate(self, src):
-        new_src = []
-        for batch in _chunks(src, self.orig_batch_size):
-            for i, x in enumerate(batch):
-                new_src.append(x)
-                next_id = 0 if i == len(batch) - 1 else i + 1
-                new_src.append(batch[next_id])
-        return new_src, self.new_batch_size
-
-class IdenticalDistractor(BatchDistractor):
-    """Use the sample itself as distractor"""
-    def __init__(self, batch_size, logger=None):
-        super().__init__(batch_size, logger)
-        self._d_factor = 2
-
-    @property
-    def d_factor(self):
-        return self._d_factor
-
-    def generate(self, src):
-        new_src = []
-        for x in src:
-            new_src.append(x)
-            new_src.append(x)
-        return new_src, self.new_batch_size
-
-class NextNDistractor(BatchDistractor):
-    """Use next N examples in batch as distractor"""
-    def __init__(self, batch_size, N, logger=None):
-        assert batch_size >= N+1, 'Invalid N!'
-        super().__init__(batch_size, logger)
-        self._d_factor = N+1
-
-    @property
-    def d_factor(self):
-        return self._d_factor
-
-    def generate(self, src):
-        new_src = []
-        for batch in _chunks(src, self.orig_batch_size):
-            if len(batch) < self.d_factor:
-                self._log('Dropping this batch that is too short', logging.WARNING)
-                continue
-            for i, x in enumerate(batch):
-                ids = [j if j < len(batch) else j - len(batch) \
-                    for j in range(i, i + self.d_factor)]
-                new_src += [batch[j] for j in ids]
-
-        return new_src, self.new_batch_size
+from bbrsa.abstract_classes import Pragmatics
 
 
 class BasicPragmatics(Pragmatics):
@@ -112,7 +50,7 @@ class GrowingAlphaPragmatics(BasicPragmatics):
     def s1(self, s0_log_probs, l1_log_probs, step):
         """Pragmatic speake, alpha grows incrementally until it reaches self.alpha"""
         if step is not None:
-            alpha = max(step, self.steps) / self.steps * self.alpha # grows in  steps
+            alpha = min(step, self.steps) / self.steps * self.alpha # grows in  steps
 
         adjusted = alpha * l1_log_probs
         isnan_mask = torch.isnan(adjusted)
@@ -167,10 +105,3 @@ class MemoizedListener(BasicPragmatics):
         self.l1_prev_prob = normalized
 
         return normalized
-
-
-def _chunks(l, n):
-    """Yield successive n-sized chunks from l."""
-    # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
-    for i in range(0, len(l), n):
-        yield l[i:i + n]
