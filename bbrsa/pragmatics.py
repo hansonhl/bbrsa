@@ -48,7 +48,7 @@ class GrowingAlphaPragmatics(BasicPragmatics):
         self.steps = steps
 
     def s1(self, s0_log_probs, l1_log_probs, step):
-        """Pragmatic speake, alpha grows incrementally until it reaches self.alpha"""
+        """Pragmatic speaker, alpha grows incrementally until it reaches self.alpha"""
         if step is not None:
             alpha = min(step, self.steps) / self.steps * self.alpha # grows in  steps
 
@@ -75,7 +75,7 @@ class MemoizedListener(BasicPragmatics):
         del self.l1_prev_prob
         self.l1_prev_prob = None
 
-    def l1(self, log_probs, rem_idxs, curr_pred, *args):
+    def l1(self, log_probs, rem_idxs, curr_pred):
         """Pragmatic listener that uses prob of previous time step as prior
         Args:
             log_probs: tensor((batch_size * beam_size), d_factor, vocab_size)
