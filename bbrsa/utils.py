@@ -100,7 +100,7 @@ def onmt_translator_builder(config_path, logger=None):
     if logger is not None:
         logger.info('Finished building ONMT translator.')
     else:
-        print('Building ONMT translator with configs from ' + config_path)
+        print('Finished building ONMT translator.')
 
     return translator, opt
 

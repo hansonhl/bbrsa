@@ -9,7 +9,8 @@ sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.evaluators import Evaluator
-from bbrsa.pragmatics import BasicPragmatics, NextExampleDistractor
+from bbrsa.pragmatics import BasicPragmatics
+from bbrsa.distractors import NextExampleDistractor
 from bbrsa.utils import init_logger, display
 # from models import ONMTSummarizer
 # from evaluators import Evaluator
