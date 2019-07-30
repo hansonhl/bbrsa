@@ -4,7 +4,7 @@ import torch
 import logging
 import bbrsa
 
-sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
+# sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer

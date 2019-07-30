@@ -3,6 +3,10 @@ import logging
 from bbrsa.abstract_classes import LiteralSpeaker
 from bbrsa.utils import onmt_translator_builder
 
+import onmt.inputters as inputters
+from onmt.utils.misc import tile
+from onmt.translate import TranslationBuilder
+
 DEFAULT_CONFIG_PATH = 'onmt_configs/cnndm.yml'
 ONMT_DIR = '../myOpenNMT'
 INFO = logging.INFO
@@ -11,7 +15,6 @@ DEBUG = logging.DEBUG
 class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
         super().__init__(logger)
-        from onmt.utils.misc import tile
 
         self.translator, opt = onmt_translator_builder(config_path, logger)
 
@@ -35,9 +38,6 @@ class ONMTSummarizer(LiteralSpeaker):
         Args:
             src: a python list of raw input text to be summarized
         """
-        import onmt.inputters as inputters
-        from onmt.translate import TranslationBuilder
-
         if truncate is not None:
             src = _truncate(src, truncate)
             self._log('Truncated src to length {}'.format(truncate), logging.INFO)
