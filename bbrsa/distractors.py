@@ -95,6 +95,8 @@ class BertDistractor(BatchDistractor):
         self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8)
         self.ignore_mask[ignore_ids] = 0
 
+        self.generate_methods = ['layer0_attn', 'unmasked_surprisal']
+
 
     @property
     def d_factor(self):
@@ -154,9 +156,10 @@ class BertDistractor(BatchDistractor):
         scrm_attn_mask = attn_mask_tensor[scrm_idxs]
         scrm_tok_remap = [token_remap_idxs[i.item()] for i in scrm_idxs]
 
-        return scrm_tok_tensor, scrm_str_tokens, scrm_attn_mask, scrm_idxs, scrm_tok_remap
+        return scrm_tok_id_tensor, scrm_str_tokens, scrm_seq_lens, \
+            scrm_attn_mask, scrm_idxs, scrm_tok_remap
 
-    def generate(self, src, ensure_different=True):
+    def generate(self, src, method='layer0_attn', ensure_different=True):
         """Replace top 5 words with highest attn in Bert to and get 1 distractor
 
         Args:
@@ -167,21 +170,40 @@ class BertDistractor(BatchDistractor):
         Returns:
             list of input strings coupled with their distractors
         """
+        assert method in self.generate_methods, 'invalid BERT distractor generation method!'
+
+        layer0_attn = (method == 'layer0_attn')
+        unm_surp = (method == 'unmasked_surprisal')
+
         tokenizer = self.tokenizer
 
-        batch_tensor, str_toks, attn_mask, scrm_idxs, tok_remap \
+        batch_tensor, str_toks, seq_lens, attn_mask, scrm_idxs, tok_remap \
             = self._batch_to_idx_tensor(src)
 
-        with torch.no_grad():
-            outputs = self.model(batch_tensor, attention_mask=attn_mask)
+        if layer0_attn:
+            with torch.no_grad():
+                outputs = self.model(batch_tensor, attention_mask=attn_mask)
 
-        # get layer 0 attention
-        # attn has shape [batch_size, num_heads, max_src_len, max_src_len]
-        attn = outputs[2][0]
-        summed = attn.sum(dim=2).sum(dim=1) # [batch_size, max_src_len]
-        summed = summed / summed.sum(dim=1, keepdim=True) # normalize
+            # get layer 0 attention
+            # attn has shape [batch_size, num_heads, max_src_len, max_src_len]
+            attn = outputs[2][0]
+            summed = attn.sum(dim=2).sum(dim=1) # [batch_size, max_src_len]
+            summed = summed / summed.sum(dim=1, keepdim=True) # normalize
 
-        _, topk_idxs = summed.topk(self.attn_top_k, sorted=True)
+            _, topk_idxs = summed.topk(self.attn_top_k, sorted=True)
+        elif unm_surp:
+            with torch.no_grad():
+                outputs = self.mask_model(batch_tensor, attention_mask=attn_mask)
+            scores = outputs[0]
+            log_probs = scores / scores.logsumexp(dim=2, keepdim=True)
+            # scores and log_probs have shape [batch_size, max_src_len, vocab_size]
+            r = torch.arange(log_probs.shape[1])
+            topk_idxs = []
+
+            for sent_log_probs, word_ids, seq_len in zip(log_probs, batch_tensor, seq_lens):
+                surprisal = (-sent_log_probs[r, word_ids])[:seq_len]
+                _, topk = surprisal.topk(self.attn_top_k, sorted=True)
+                topk_idxs.append(topk)
 
         all_masked_tensors = []
         all_masked_idxs = []
@@ -207,8 +229,8 @@ class BertDistractor(BatchDistractor):
 
         all_distractors = []
 
-        for pred, masked_idxs, src_tok_ids, remap_idxs in \
-                zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap):
+        for pred, masked_idxs, src_tok_ids, remap_idxs, src_str in \
+                zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, src):
             # get top2 predictions for masked positions
             _, top2 = pred[masked_idxs].topk(2, dim=1)
             subs = top2[:,0]
@@ -224,7 +246,7 @@ class BertDistractor(BatchDistractor):
             sub_tok_ids[masked_idxs] = subs
             sub_tok_ids = sub_tok_ids[sub_tok_ids != self.pad_id]
             sub_tok_strs = tokenizer.convert_ids_to_tokens(sub_tok_ids.tolist())
-            all_distractors.append(_retokenize(sub_tok_strs, remap_idxs))
+            all_distractors.append(_retokenize(src_str, sub_tok_strs, remap_idxs))
 
         # reorder and group together
         reorder_idxs = idx_remap(scrm_idxs)
@@ -234,6 +256,7 @@ class BertDistractor(BatchDistractor):
             res.append(s)
             res.append(d)
         return res
+
 
 def _bert_token_remap(src, tgt):
     """Given src string and list of tokenizations by bert, get mapping idxs
@@ -277,7 +300,8 @@ def _bert_token_remap(src, tgt):
 
     return res
 
-def _retokenize(tgt, remap_idxs):
+def _retokenize(src_str, tgt, remap_idxs):
+    src_list = src_str.split()
     res = []
     curr_i = 0
     cont = ''
@@ -288,6 +312,8 @@ def _retokenize(tgt, remap_idxs):
             tok = tok.lstrip('##')
         cont += tok
         if remap_idxs[tok_i + 1] != curr_i:
+            if cont == '(' or cont == ')' or cont == '\"' or cont == '[UNK]':
+                cont = src_list[curr_i]
             res.append(cont)
             cont = ''
             curr_i += 1
