@@ -34,8 +34,8 @@ src = ['police arrested five anti-nuclear protesters friday after they sought to
 """
 # dump = ProbAttnDump()
 model.set_alpha(5)
-s0_pred = model.summarize_with_s0(src, n_best=1, beam_size=20)
-s1_pred = model.summarize_with_distractor(src, beam_size=20)
+s0_pred = model.summarize_s0(src, n_best=1, beam_size=20)
+s1_pred = model.incremental_s1(src, beam_size=20)
 #json_file = 'results/test2.json'
 #dump.to_attn_vis_json(json_file)
 print(s0_pred)

@@ -21,12 +21,12 @@ def main():
 
     print('----- Starting summary with distractor')
     start_time = time.time()
-    pred1 = model.summarize_with_distractor(src, beam_size=10, truncate=400)
+    pred1 = model.incremental_s1(src, beam_size=10, truncate=400)
     print('----- Finished summary. Duration:', time.time() - start_time)
 
     print('----- Starting summary without distractor')
     start_time = time.time()
-    pred2 = model.summarize_with_s0(src, n_best=30, beam_size=30, truncate=400)
+    pred2 = model.summarize_s0(src, n_best=30, beam_size=30, truncate=400)
     print('----- Finished summary. Duration:', time.time() - start_time)
     for i, l in enumerate(pred2):
         print('#### Sentence', i, '####')

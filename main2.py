@@ -25,12 +25,12 @@ def main():
 
     print('----- Starting summary with distractor')
     start_time = time.time()
-    pred1 = model.summarize_with_distractor(src, beam_size=10, truncate=400)
+    pred1 = model.incremental_s1(src, beam_size=10, truncate=400)
     print('----- Finished summary. Duration:', time.time() - start_time)
 
     print('----- Starting summary without distractor')
     start_time = time.time()
-    pred2 = model.summarize_with_s0(src, beam_size=10, truncate=400)
+    pred2 = model.summarize_s0(src, beam_size=10, truncate=400)
     print('----- Finished summary. Duration:', time.time() - start_time)
 
     display(['s1', 's0'], [pred1, pred2])
@@ -41,7 +41,7 @@ def main():
     # model = ONMTSummaryRSA(s0_2, pragmatics, distractor)
     # print('----- Starting summary with identical distractor')
     # start_time = time.time()
-    # pred3 = model.summarize_with_s0(src, beam_size=10)
+    # pred3 = model.summarize_s0(src, beam_size=10)
     # print('----- Finished summary. Duration:', time.time() - start_time)
     # print(pred3)
 

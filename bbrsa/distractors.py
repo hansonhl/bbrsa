@@ -1,6 +1,6 @@
 import torch, logging
 from bbrsa.abstract_classes import BatchDistractor
-from bbrsa.utils import idx_remap
+from bbrsa.utils import idx_remap, chunks
 from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM
 
 class NextExampleDistractor(BatchDistractor):
@@ -15,7 +15,7 @@ class NextExampleDistractor(BatchDistractor):
 
     def generate(self, src):
         new_src = []
-        for batch in _chunks(src, self.orig_batch_size):
+        for batch in chunks(src, self.orig_batch_size):
             for i, x in enumerate(batch):
                 new_src.append(x)
                 next_id = 0 if i == len(batch) - 1 else i + 1
@@ -52,7 +52,7 @@ class NextNDistractor(BatchDistractor):
 
     def generate(self, src):
         new_src = []
-        for batch in _chunks(src, self.orig_batch_size):
+        for batch in chunks(src, self.orig_batch_size):
             if len(batch) < self.d_factor:
                 self._log('Dropping this batch that is too short', logging.WARNING)
                 continue
@@ -65,9 +65,10 @@ class NextNDistractor(BatchDistractor):
 
 class BertDistractor(BatchDistractor):
     """Change words that BERT attend to with BERT's own predictions"""
-    def __init__(self, batch_size, logger=None):
+    def __init__(self, batch_size, verbose=False, logger=None):
         super().__init__(batch_size, logger)
         self._d_factor = 2
+        self.verbose = verbose
 
         # initialize bert
         self._log('Initializing Bert models for distractor', logging.INFO)
@@ -89,7 +90,7 @@ class BertDistractor(BatchDistractor):
         self.unk_id = tokenizer.convert_tokens_to_ids([self.unk_token])[0]
 
         # insignificant tokens to filter out
-        self.attn_top_k = 10
+        self.attn_top_k = 15
         self.ignore_toks = ['[CLS]', '[SEP]', self.unk_token]
         ignore_ids = tokenizer.convert_tokens_to_ids(self.ignore_toks)
         self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8)
@@ -159,18 +160,32 @@ class BertDistractor(BatchDistractor):
         return scrm_tok_id_tensor, scrm_str_tokens, scrm_seq_lens, \
             scrm_attn_mask, scrm_idxs, scrm_tok_remap
 
-    def generate(self, src, method='layer0_attn', ensure_different=True):
-        """Replace top 5 words with highest attn in Bert to and get 1 distractor
+    def generate(self, src, method='unmasked_surprisal', mask_topk=5,
+                 repl_search_topk=5, ensure_different=True):
+        """Replace top 5 salient words in Bert to get 1 distractor
+
+        Measure of salience is determined by `method` parameter:
+
+        `layer0_attn` uses the total attention on each word in the source
+        article.
+
+        `unmasked_surprisal` uses -log(prob(word)) for each position in the
+        source given by the BERT language model, with the source as input.
 
         Args:
             src: list of strings
+            method: method for measure of salience, one among
+                `[layer0_attn, unmasked_surprisal]`
+            repl_search_topk: randomly sample word for replacement from
+                topk predictions
             ensure_different: ensures different word is replaced during distractor
                 generation.
 
         Returns:
             list of input strings coupled with their distractors
         """
-        assert method in self.generate_methods, 'invalid BERT distractor generation method!'
+        assert method in self.generate_methods, \
+            'invalid BERT distractor generation method!'
 
         layer0_attn = (method == 'layer0_attn')
         unm_surp = (method == 'unmasked_surprisal')
@@ -216,8 +231,8 @@ class BertDistractor(BatchDistractor):
             signif_mask = self.ignore_mask[attended_toks]
             signif_idxs = attended_idxs[signif_mask]
 
-            # mask top 5 words that are attended by bert
-            masked_idxs = signif_idxs[:5]
+            # mask top 3 words according to salient heuristic
+            masked_idxs = signif_idxs[:mask_topk]
             masked_toks = src_tok_ids.clone().detach()
             masked_toks[masked_idxs] = self.mask_id
             all_masked_tensors.append(masked_toks)
@@ -232,14 +247,20 @@ class BertDistractor(BatchDistractor):
         for pred, masked_idxs, src_tok_ids, remap_idxs, src_str in \
                 zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, src):
             # get top2 predictions for masked positions
-            _, top2 = pred[masked_idxs].topk(2, dim=1)
-            subs = top2[:,0]
+            _, repl_candidates = pred[masked_idxs].topk(repl_search_topk, dim=1)
+
+            repl_idxs = torch.randint(repl_search_topk, (repl_candidates.shape[0],))
+
+            rng = torch.arange(repl_candidates.shape[0])
+            subs = repl_candidates[rng, repl_idxs]
 
             # ensure substitutions are different from orig toks
             if ensure_different:
                 org_toks = src_tok_ids[masked_idxs]
                 duplicate_mask = (subs == org_toks)
-                subs[duplicate_mask] = top2[duplicate_mask, 1]
+                new_repl_idxs = repl_idxs[duplicate_mask] + 1
+                new_repl_idxs[new_repl_idxs >= repl_search_topk] = 0
+                subs[duplicate_mask] = repl_candidates[duplicate_mask, new_repl_idxs]
 
             # get substituted sentence
             sub_tok_ids = src_tok_ids.clone().detach()
@@ -255,7 +276,10 @@ class BertDistractor(BatchDistractor):
         for s, d in zip(src, all_distractors):
             res.append(s)
             res.append(d)
-        return res
+        if self.verbose:
+            self._log('Bert Generated these distractors:\n')
+            self._log(res)
+        return res, self.new_batch_size
 
 
 def _bert_token_remap(src, tgt):
@@ -318,10 +342,3 @@ def _retokenize(src_str, tgt, remap_idxs):
             cont = ''
             curr_i += 1
     return ' '.join(res)
-
-
-def _chunks(l, n):
-    """Yield successive n-sized chunks from l."""
-    # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
-    for i in range(0, len(l), n):
-        yield l[i:i + n]

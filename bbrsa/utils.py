@@ -2,6 +2,9 @@ import logging
 import json
 import torch
 
+from onmt.utils.parse import ArgumentParser
+import onmt.opts as opts
+from onmt.translate.translator import build_translator
 
 class ProbAttnDump(object):
     # works only for batch size of one, greedy search
@@ -85,10 +88,6 @@ def onmt_translator_builder(config_path, logger=None):
     else:
         print('Building ONMT translator with configs from ' + config_path)
 
-    from onmt.utils.parse import ArgumentParser
-    import onmt.opts as opts
-    from onmt.translate.translator import build_translator
-
     parser = ArgumentParser(default_config_files=[config_path])
     opts.config_opts(parser)
     opts.translate_opts(parser)
@@ -119,5 +118,11 @@ def scramble2tgt(idxs, d_factor):
 
 def idx_remap(idxs):
     # e.g. input idxs=[1,2,0,3] -> output [2,0,1,3]
-    inds, perm = torch.sort(idxs)
+    _, perm = torch.sort(idxs)
     return perm
+
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
+    for i in range(0, len(l), n):
+        yield l[i:i + n]

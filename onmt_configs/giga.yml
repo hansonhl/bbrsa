@@ -3,7 +3,4 @@ beam_size: 10
 model: /home/hansonlu/myOpenNMT/models/gigaword_copy_acc_51.78_ppl_11.71_e20.pt
 src: /home/hansonlu/myOpenNMT/data/giga/small_input.txt
 verbose: True
-coverage_penalty: summary
-beta: 5
-length_penalty: wu
-alpha: 0.9
+seed: -1

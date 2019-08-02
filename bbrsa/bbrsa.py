@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from bbrsa.beam import ONMTBeam
 from bbrsa.distractors import NextExampleDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
-from bbrsa.utils import idx_remap, scramble2tgt
+from bbrsa.utils import idx_remap, scramble2tgt, chunks
 from torchtext.data.batch import Batch as TorchBatch
 
 class BatchBeamRSA(ABC):
@@ -30,14 +30,17 @@ class ONMTSummaryRSA(BatchBeamRSA):
     def set_alpha(self, alpha):
         self.pragmatics.alpha = alpha
 
-    def itos_single_array(self, idxs, beam_size):
+    def itos_single(self, idxs, idx_in_batch, src=True):
         """Convert one single array to text"""
-        base_itos = dict(self.s0.translator.fields)['tgt'].base_field.vocab.itos
+        field_name = 'src' if src else 'tgt'
+        base_itos = dict(self.s0.translator.fields)[field_name].base_field.vocab.itos
         base_size = len(base_itos)
         tokens = []
-        for i, tok in enumerate(idxs):
-            b = i // beam_size
-            ext_itos = self.s0.data.src_vocabs[b].itos
+        for tok in idxs:
+            if src:
+                ext_itos = self.s0.data.src_vocabs[idx_in_batch].itos
+            else:
+                ext_itos = self.s0.data.tgt_vocabs[idx_in_batch].itos
             ext_size = len(ext_itos)
             full_size = base_size + ext_size
             if tok < len(base_itos):
@@ -54,7 +57,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
     def itos(self, idxs, batch, reordered=False, d_factor=None):
         """Converts arrays of indices to text"""
-        # reordered is false when idx order is scrambled (for summarize_with_s0)
+        # reordered is false when idx order is scrambled (for s0)
         # batch provides extended vocab and scrambled indices
 
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
@@ -95,7 +98,9 @@ class ONMTSummaryRSA(BatchBeamRSA):
             preds = [preds[i] for i in reorder_idxs]
         return preds
 
-    def _run_s0(self, src, beam_size=1, n_best=1, truncate=None, dump=None):
+
+    def _run_s0(self, src, beam_size=1, n_best=1, truncate=None, diverse_beam=None,
+                dump=None):
         with torch.no_grad():
             preds = []
             # all_log_probs = []
@@ -117,8 +122,10 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
                 # actual batch size, batch may be smaller than max batch size
 
-                beam = ONMTBeam(s0, batch_size=beam_batch_size, \
-                    beam_size=beam_size)
+                beam = ONMTBeam(s0,
+                    batch_size=beam_batch_size,
+                    beam_size=beam_size,
+                    diverse=diverse_beam)
 
                 for step in range(max_length):
                     decoder_input = beam.current_pred
@@ -134,7 +141,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # self._log('log_probs.shape: {}'.format(log_probs.shape))
                     # self._log('argmax of log_probs: {}'.format())
 
-                    beam.advance(log_probs, attn)
+                    verbose = (step == 3)
+                    beam.advance(log_probs, attn, verbose=verbose)
 
                     # self._log('step {}, topk_probs {}'.format(step, beam.beam.topk_log_probs))
                     # self._log('step {}, attn {}'.format(step, attn))
@@ -170,7 +178,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
             return preds, beam
         # end with torch.no_grad()
 
-    def summarize_with_s0(self, src, beam_size=1, n_best=1, truncate=None, dump=None):
+    def summarize_s0(self, src, beam_size=1, n_best=1, truncate=None,
+                          diverse_beam=None, dump=None):
         self._log('==== Beginning Summary with S0 ====', logging.INFO)
 
         preds, _ = self._run_s0(
@@ -178,6 +187,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
             beam_size=beam_size,
             n_best=n_best,
             truncate=truncate,
+            diverse_beam=diverse_beam,
             dump=dump)
 
         if dump is not None:
@@ -186,8 +196,130 @@ class ONMTSummaryRSA(BatchBeamRSA):
             self._log('src: {}, tgt: {}'.format(dump.src, dump.tgt))
         return preds #, all_log_probs, curr_preds
 
-    def summarize_with_distractor(self, src, beam_size=1, n_best=1, truncate=None):
-        """Summarize source text using RSA."""
+    def _get_s0_log_probs(self, srcs, summaries, d_factor, truncate=None):
+        """Get S0(u|w) for different w's and u's.
+
+        Args:
+            srcs: original articles and their distractors, list of strings
+                ``[num_srcs * d_factor,]``
+                This should be output from distractor.generate().
+            summaries: possible utterances for each original article, 2-D str list
+                ``[num_srcs, num_candidates]``
+                This should be output from _run_s0(). (num_candidates = beam_size)
+            d_factor: total number of world states, i.e. num_distractors + 1
+            truncate: whether to truncate src article. # possibly change
+
+        Returns:
+            ``tensor([num_srcs, d_factor, num_candidates])``
+            Matrix of log probabilities, for S0(u|w), last dimension normalized
+        """
+        # reshape srcs into (num_srcs, d_factor)
+        src_chunks = list(chunks(srcs, d_factor))
+        srcs, tgts = [], []
+        num_candidates = -1
+        for ws, us in zip(src_chunks, summaries):
+            # TODO: for cnndm, need to add tags to tgts
+            if num_candidates == -1:
+                num_candidates = len(us)
+            for w in ws:
+                # for each w in {art, distractors} set, get a batch
+                srcs += [w] * len(us)
+            tgts += us * len(ws)
+        # now srcs, tgts have shape [num_srcs * d_factor * num_candidates,]
+
+        s0 = self.s0
+        s0.init_batch_iterator(src=srcs, tgt=tgts, truncate=truncate,
+            batch_size=num_candidates)
+        # TODO: probably have a more flexible batch size?
+        pad_token = s0.pad_token
+
+        all_sent_probs = []
+
+        with torch.no_grad():
+            for batch in s0.data_iter:
+                s0.encode(batch)
+                decoder_inputs = batch.tgt
+                log_probs, _ = s0.decode(
+                    input=decoder_inputs,
+                    batch=batch,
+                    step=None,
+                    beam_batch_offset=None)
+
+                reorder_idxs = idx_remap(batch.indices)
+                reordered_probs = log_probs.index_select(1, reorder_idxs)
+                reordered_tgts = batch.tgt.index_select(1, reorder_idxs)
+                masks = (reordered_tgts != pad_token)
+
+                sent_probs = torch.zeros(num_candidates)
+                range_idxs = torch.arange(reordered_probs.shape[0])
+                for i in range(num_candidates):
+                    mask = masks[:, i, 0]
+                    rng = range_idxs[mask]
+                    word_idxs = reordered_tgts[:, i, 0][mask]
+                    word_probs = reordered_probs[rng, i, word_idxs]
+
+                    # NORMALIZATION: divide by length
+                    sent_probs[i] = word_probs.sum(dim=0) / ((word_probs.shape[0]) ** 1.2)
+
+                sent_probs = sent_probs - torch.logsumexp(sent_probs, dim=0,
+                                                          keepdim=True)
+                all_sent_probs.append(sent_probs)
+
+        all_sent_probs = torch.stack(all_sent_probs) \
+                              .view(-1, d_factor, num_candidates)
+        # now all_sent_probs has shape [num_srcs, d_factor, num_candidates]
+        return all_sent_probs
+
+
+    def global_s1(self, src, beam_size=5, n_best=1, truncate=None,
+                  diverse_beam=None):
+        """Summarize source text using global RSA
+
+        Args:
+            src: articles to summarize, list of strings
+            beam_size: beam size during beam search of s0, equivalent to number
+                of candidate utterances for each article, used as the set of
+                possible utterances for the pragmatic l1 and s1, default 5.
+            n_best: number of articles returned at the end, ranked by s1's
+                probabilities, default 1.
+            truncate: length of src article that is truncated when read by s0,
+                default None, which does not truncate it
+            diverse_beam: name of strategy for diverse beam search in s0
+        """
+        assert isinstance(self.pragmatics, BasicPragmatics), \
+            'Must use BasicPragmaitcs for global S1!'
+        assert (n_best <= beam_size), 'n_best must be less than beam size!'
+
+        self._log('==== Beggining Summary with global S1 ====', logging.INFO)
+
+        candidates, _ = self._run_s0(
+            src,
+            beam_size=beam_size,
+            n_best=beam_size,
+            truncate=truncate,
+            diverse_beam=diverse_beam,
+            dump=None)
+        print('candidates', candidates)
+        # candidates has shape [num_srcs, num_candidates]
+
+        d_factor = self.distractor.d_factor
+        srcs, batch_size = self.distractor.generate(src)
+
+        s0_probs = self._get_s0_log_probs(srcs, candidates, d_factor,
+                                          truncate=truncate)
+        s1_probs = self.pragmatics.inference(s0_probs)
+        # both s0_probs and s1_probs have shape [num_srcs, d_factor, num_candidates]
+
+        tgt_probs = s1_probs[:, 0, :]
+        n_best_probs, n_best_idxs = tgt_probs.topk(n_best, dim=1)
+        print(n_best_probs.exp())
+        res = [[candidates[i][j] for j in idxs] for i, idxs in enumerate(n_best_idxs)]
+        return res
+
+
+    def incremental_s1(self, src, beam_size=1, n_best=1, truncate=None,
+                       diverse_beam=None):
+        """Summarize source text using incremental RSA."""
         self._log('==== Beginning Summary with distractor ====')
         assert self.distractor is not None, 'Must specify distractor!'
         assert self.pragmatics is not None, 'Must specify pragmatics'
@@ -225,6 +357,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     batch_size=beam_batch_size,
                     beam_size=beam_size,
                     n_best=n_best,
+                    diverse=diverse_beam,
                     distractor=self.distractor,
                     scramble_idxs=batch.indices)
 

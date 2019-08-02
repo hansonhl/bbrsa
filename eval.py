@@ -28,7 +28,7 @@ src = ['police arrested seven climate-change protesters friday after they sought
     'police arrested six climate-change protesters saturday after they sought to disrupt loading of a french antarctic research and supply vessel , a spokesman for the protesters said .',
     'police arrested eighteen climate-change protesters friday after they sought to disrupt loading of a french antarctic research and supply vessel , a spokesman for the protesters said .']
 
-pred = model.summarize_with_s0(src, beam_size=10)
+pred = model.summarize_s0(src, beam_size=10)
 
 tgt = 'police arrest climate-change protesters on saturday'
 # [0.9315, 0.0500, 0.0185], cnndm

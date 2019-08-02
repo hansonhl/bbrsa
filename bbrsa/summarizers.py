@@ -14,6 +14,7 @@ DEBUG = logging.DEBUG
 
 class ONMTSummarizer(LiteralSpeaker):
     def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
+        """build summarizer from config"""
         super().__init__(logger)
 
         self.translator, opt = onmt_translator_builder(config_path, logger)
@@ -103,6 +104,11 @@ class ONMTSummarizer(LiteralSpeaker):
     @property
     def max_output_length(self):
         return self.translator.max_length
+
+    @property
+    def pad_token(self):
+        str_pad_token = self.translator.fields['tgt'].base_field.pad_token
+        return self.translator.fields['tgt'].base_field.vocab.stoi[str_pad_token]
 
     def decode(self, input, batch, step=None, beam_batch_offset=None):
         T = self.translator

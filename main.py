@@ -26,14 +26,14 @@ def main():
 
     print('----- Starting summary with distractor')
     start_time = time.time()
-    pred = model.summarize_with_distractor(src, beam_size=10)
+    pred = model.incremental_s1(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
     print('=================================')
 
     print('----- Starting summary without distractor')
     start_time = time.time()
-    pred = model.summarize_with_s0(src, beam_size=10)
+    pred = model.summarize_s0(src, beam_size=10)
     print('----- Finished summary. Duration:', time.time() - start_time)
     print(pred)
 
