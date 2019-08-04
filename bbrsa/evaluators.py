@@ -75,7 +75,7 @@ class Evaluator(BBRSAABC):
 
         for sent in tqdm(src):
             model_in, _ = distractor.generate([sent])
-            model_out = model.summary_s0(model_in, beam_size=10, n_best=1,
+            model_out = model.summarize_s0(model_in, beam_size=10, n_best=1,
                                              diverse_beam='rank')
             hypothesis = model_out[0][0]
             probs = self.get_l1_probs(model_in, hypothesis)
