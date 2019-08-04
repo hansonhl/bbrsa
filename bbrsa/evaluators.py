@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 from bbrsa.abstract_classes import BBRSAABC
 from bbrsa.utils import idx_remap
-from bbrsa.distractors import AsIsDistractor
+from bbrsa.distractors import AsIsDistractor, NextExampleDistractor
 
 
 class Evaluator(BBRSAABC):
@@ -73,18 +73,21 @@ class Evaluator(BBRSAABC):
         total_correct = 0.
         total_srcs = 0.
 
-        for sent in tqdm(src):
-            model_in, _ = distractor.generate([sent])
+        for i, sent in tqdm(enumerate(src)):
+            if isinstance(distractor, NextExampleDistractor):
+                next_id = i + 1 if i < len(src) - 1 else 0
+                model_in = [sent, src[next_id]]
+            else:
+                model_in, _ = distractor.generate([sent])
             model_out = model.summarize_s0(model_in, beam_size=10, n_best=1,
                                              diverse_beam='rank')
             hypothesis = model_out[0][0]
             probs = self.get_l1_probs(model_in, hypothesis)
             if probs.argmax() == 0:
                 total_correct += 1
-            total_srcs += 1
             if verbose:
                 self._display_one_result(model_in, hypothesis, probs)
-                self._log('Accuracy up to now: {:.4}'.format(total_correct/total_srcs))
+                self._log('Accuracy up to now: {:.4}'.format(total_correct/(i+1)))
 
 
         return total_correct / total_srcs

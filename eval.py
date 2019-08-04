@@ -22,7 +22,7 @@ evaluator = Evaluator(eval_s0, add_tags=False, logger=logger)
 
 pragmatics = BasicPragmatics(alpha=3)
 summ_s0 = ONMTSummarizer(config_path='onmt_configs/giga_split1.yml', logger=logger)
-distractor = BertDistractor(batch_size=summ_s0.default_batch_size)
+distractor = NextExampleDistractor(batch_size=summ_s0.default_batch_size)
 model = ONMTSummaryRSA(summ_s0, pragmatics, distractor)
 
 
