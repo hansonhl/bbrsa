@@ -3,14 +3,14 @@ import torch
 import bbrsa
 sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 
-from bbrsa.distractors import BertDistractor, NextExampleDistractor
+from bbrsa.distractors import BertDistractor, NextExampleDistractor, AsIsDistractor
 from bbrsa.bbrsa import ONMTSummaryRSA
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics
 
 s0 = ONMTSummarizer(config_path='onmt_configs/giga.yml')
-pragmatics = BasicPragmatics(alpha=20)
-distr = BertDistractor(batch_size=s0.default_batch_size, verbose=True)
+pragmatics = BasicPragmatics(alpha=3)
+distr = BertDistractor(batch_size=s0.default_batch_size)
 model = ONMTSummaryRSA(s0, pragmatics, distr)
 
 src = ['police arrested five anti-nuclear protesters thursday after they sought to disrupt loading of a french nuclear research and supply vessel in antarctica , a spokesman for the protesters said .']
@@ -26,3 +26,15 @@ print('\nSummarizing with diverse beam search:')
 # print(model.summarize_s0(src, n_best=10, diverse_beam='rank', beam_size=10))
 
 print(model.global_s1(src, beam_size=10, n_best=3, diverse_beam=None))
+
+model.set_alpha(3)
+
+print(model.incremental_s1(src, beam_size=10, n_best=1, diverse_beam='rank'))
+
+print('\n-----Trying as-is distractor-----')
+
+distr2 = AsIsDistractor(d_factor=distr.d_factor, batch_size=s0.default_batch_size)
+model2 = ONMTSummaryRSA(s0, pragmatics, distr2)
+src2, _ = distr.generate(src)
+print('src2', src2)
+print(model2.incremental_s1(src2, beam_size=10, n_best=1, diverse_beam='rank'))

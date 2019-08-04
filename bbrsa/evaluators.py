@@ -1,15 +1,19 @@
 import torch
 
+from tqdm import tqdm
+
 from bbrsa.abstract_classes import BBRSAABC
 from bbrsa.utils import idx_remap
+from bbrsa.distractors import AsIsDistractor
+
 
 class Evaluator(BBRSAABC):
-    def __init__(self, s0, add_tags=True, logger=None):
+    def __init__(self, eval_s0, add_tags=False, logger=None):
         super().__init__(logger)
-        self.s0 = s0
+        self.eval_s0 = eval_s0
         self.add_tags = add_tags
 
-    def evaluate(self, srcs, summary, truncate=None):
+    def get_l1_probs(self, srcs, summary, truncate=None):
         """ Given target and distractors and a summary, get L1 probability for the target
 
         Currently only supports one target and one target+distractor set.
@@ -28,7 +32,7 @@ class Evaluator(BBRSAABC):
             summary = '<t> ' + summary + ' </t>'
         tgts = [summary] * num_distractors
 
-        s0 = self.s0
+        s0 = self.eval_s0
         batch_size = num_distractors if num_distractors > s0.default_batch_size \
             else s0.default_batch_size
 
@@ -36,7 +40,6 @@ class Evaluator(BBRSAABC):
             batch_size=batch_size)
 
         with torch.no_grad():
-
             for batch in s0.data_iter:
                 s0.encode(batch)
                 decoder_inputs = batch.tgt
@@ -45,6 +48,7 @@ class Evaluator(BBRSAABC):
                     batch=batch,
                     step=None,
                     beam_batch_offset=None)
+                print('log_probs.shape', log_probs.shape)
 
                 reorder_idxs = idx_remap(batch.indices)
                 reordered_probs = log_probs.index_select(1, reorder_idxs)
@@ -56,3 +60,36 @@ class Evaluator(BBRSAABC):
                 sent_probs = torch.exp(sent_probs)
 
                 return sent_probs
+
+    def split_evaluate(self, model, distractor, src, verbose=False):
+        self._log('==== Starting Split Evaluation ====\n')
+        model.distractor = AsIsDistractor(distractor.orig_batch_size,
+                                          distractor.d_factor,
+                                          self.logger)
+
+        torch.manual_seed(3939)
+        self._log('---- Evaluating incremental s1 ----\n')
+
+        total_correct = 0.
+        total_srcs = len(src)
+
+        for sent in tqdm(src):
+            model_in, _ = distractor.generate([sent])
+            model_out = model.incremental_s1(model_in, beam_size=10, n_best=1,
+                                             diverse_beam='rank')
+            hypothesis = model_out[0][0]
+            probs = self.get_l1_probs(model_in, hypothesis)
+            if verbose:
+                self._display_one_result(model_in, hypothesis, probs)
+            if probs.argmax() == 0:
+                total_correct += 1
+
+        return total_correct / total_srcs
+
+
+    def _display_one_result(self, src, hypothesis, probs):
+        pb_list = probs.tolist()
+        self._log('[{:.4}] tgt: {}\n'.format(pb_list[0], src[0]))
+        for pb, s in zip(pb_list[1:], src[1:]):
+            self._log('[{:.4}] distr: {}\n'.format(pb, s))
+        self._log('hypothesis: {}\n\n'.format(hypothesis))
