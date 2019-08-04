@@ -3,6 +3,19 @@ from bbrsa.abstract_classes import BatchDistractor
 from bbrsa.utils import idx_remap, chunks
 from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM
 
+class AsIsDistractor(BatchDistractor):
+    """Use distractors that are already contained in the batch"""
+    def __init__(self, batch_size, d_factor, logger=None):
+        super().__init__(batch_size, logger)
+        self._d_factor = d_factor
+
+    @property
+    def d_factor(self):
+        return self._d_factor
+
+    def generate(self, src):
+        return src, self.new_batch_size
+
 class NextExampleDistractor(BatchDistractor):
     """Use next example in batch as distractor"""
     def __init__(self, batch_size, logger=None):
@@ -276,9 +289,9 @@ class BertDistractor(BatchDistractor):
         for s, d in zip(src, all_distractors):
             res.append(s)
             res.append(d)
-        if self.verbose:
-            self._log('Bert Generated these distractors:\n')
-            self._log(res)
+        # if self.verbose:
+        #     self._log('Bert Generated these distractors:\n')
+        #     self._log(res)
         return res, self.new_batch_size
 
 
