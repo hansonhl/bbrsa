@@ -13,7 +13,7 @@ class AsIsDistractor(BatchDistractor):
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
         return src, self.new_batch_size
 
 class NextExampleDistractor(BatchDistractor):
@@ -26,7 +26,7 @@ class NextExampleDistractor(BatchDistractor):
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
         new_src = []
         for batch in chunks(src, self.orig_batch_size):
             for i, x in enumerate(batch):
@@ -45,7 +45,7 @@ class IdenticalDistractor(BatchDistractor):
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
         new_src = []
         for x in src:
             new_src.append(x)
@@ -63,7 +63,7 @@ class NextNDistractor(BatchDistractor):
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
         new_src = []
         for batch in chunks(src, self.orig_batch_size):
             if len(batch) < self.d_factor:

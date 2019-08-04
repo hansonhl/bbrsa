@@ -96,7 +96,8 @@ class ONMTBeam(Beam):
         return self.beam._batch_offset
 
 class RankDiverseBeam(BeamSearch):
-    def advance(self, log_probs, attn, verbose=False):
+    def advance(self, log_probs, attn, opts, verbose=False):
+        rank_lambda = opts.diverse_beam_rank_lambda
         # log_probs has shape [beam_size * batch_size, ext_vocab_size]
         vocab_size = log_probs.size(-1)
 
@@ -135,7 +136,7 @@ class RankDiverseBeam(BeamSearch):
         # curr_scores = log_probs
         _, idxs = torch.sort(curr_scores, dim=1, descending=True)
         ranking = idx_remap(idxs).float() + 1.
-        curr_scores -= 1.5 * ranking
+        curr_scores -= rank_lambda * ranking
 
         curr_scores = curr_scores.reshape(_B, self.beam_size * vocab_size)
 

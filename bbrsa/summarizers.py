@@ -39,7 +39,7 @@ class ONMTSummarizer(LiteralSpeaker):
         Args:
             src: a python list of raw input text to be summarized
         """
-        if truncate is not None:
+        if truncate != -1:
             src = _truncate(src, truncate)
             self._log('Truncated src to length {}'.format(truncate), logging.INFO)
             self._log('len of first element is {}'.format(len(src[0].split())))

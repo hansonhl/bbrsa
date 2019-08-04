@@ -4,11 +4,11 @@ import logging
 from bbrsa.abstract_classes import Pragmatics
 
 class BasicPragmatics(Pragmatics):
-    def __init__(self, alpha=1, logger=None):
+    def __init__(self, logger=None):
         super().__init__(logger)
         self.alpha = alpha
 
-    def l1(self, log_probs, *args):
+    def l1(self, log_probs, opts, *args):
         """Pragmatic listener based on top of s0"""
         normalized = log_probs - torch.logsumexp(log_probs, dim=1, keepdim=True)
         normalized[torch.isnan(normalized)] = -np.log(normalized.shape[1])
@@ -17,7 +17,7 @@ class BasicPragmatics(Pragmatics):
 
     def s1(self, s0_log_probs, l1_log_probs, opts, *args):
         """Pragmatic speaker"""
-        adjusted = opts.alpha * l1_log_probs
+        adjusted = opts.prag_alpha * l1_log_probs
         isnan_mask = torch.isnan(adjusted)
         adjusted[isnan_mask] = float('-inf')
 
@@ -38,8 +38,8 @@ class BasicPragmatics(Pragmatics):
             `tensor([*, num_world_states, vocab_size])`
         """
         s0_log_probs = s0_log_probs.type(torch.double)
-        l1_log_probs = self.l1(s0_log_probs, *args)
-        res = self.s1(s0_log_probs, l1_log_probs, *args).type(torch.float)
+        l1_log_probs = self.l1(s0_log_probs, opts, *args)
+        res = self.s1(s0_log_probs, l1_log_probs, opts, *args).type(torch.float)
         return res
 
 class GrowingAlphaPragmatics(BasicPragmatics):
@@ -76,7 +76,7 @@ class MemoizedListener(BasicPragmatics):
         del self.l1_prev_prob
         self.l1_prev_prob = None
 
-    def l1(self, log_probs, rem_idxs, curr_pred):
+    def l1(self, log_probs, opts, rem_idxs, curr_pred):
         """Pragmatic listener that uses prob of previous time step as prior
         Args:
             log_probs: tensor((batch_size * beam_size), d_factor, vocab_size)

@@ -8,12 +8,11 @@ from bbrsa.distractors import AsIsDistractor
 
 
 class Evaluator(BBRSAABC):
-    def __init__(self, eval_s0, add_tags=False, logger=None):
+    def __init__(self, eval_s0, logger=None):
         super().__init__(logger)
         self.eval_s0 = eval_s0
-        self.add_tags = add_tags
 
-    def get_l1_probs(self, srcs, summary, truncate=None):
+    def get_l1_probs(self, srcs, summary, opts):
         """ Given target and distractors and a summary, get L1 probability for the target
 
         Currently only supports one target and one target+distractor set.
@@ -23,12 +22,13 @@ class Evaluator(BBRSAABC):
             tgt: a string that is the summary
             truncate: (default None) whether to truncate the srcs
         """
-
+        add_tags = opts.add_tags
+        truncate = opts.truncate
         # some things to consider: summary may contain tokens that are not in
         # model vocab or src vocab
         num_distractors = len(srcs)
         summary = summary.strip()
-        if self.add_tags:
+        if add_tags:
             summary = '<t> ' + summary + ' </t>'
         tgts = [summary] * num_distractors
 
@@ -61,7 +61,7 @@ class Evaluator(BBRSAABC):
 
                 return sent_probs
 
-    def split_evaluate(self, model, distractor, src, verbose=False):
+    def split_evaluate(self, model, distractor, src, opts, verbose=False):
         self._log('==== Starting Split Evaluation ====\n')
         model.distractor = AsIsDistractor(distractor.orig_batch_size,
                                           distractor.d_factor,
@@ -74,11 +74,10 @@ class Evaluator(BBRSAABC):
         total_srcs = len(src)
 
         for sent in tqdm(src):
-            model_in, _ = distractor.generate([sent])
-            model_out = model.incremental_s1(model_in, beam_size=10, n_best=1,
-                                             diverse_beam='rank')
+            model_in, _ = distractor.generate([sent], opts)
+            model_out = model.incremental_s1(model_in, opts)
             hypothesis = model_out[0][0]
-            probs = self.get_l1_probs(model_in, hypothesis)
+            probs = self.get_l1_probs(model_in, hypothesis, opts)
             if verbose:
                 self._display_one_result(model_in, hypothesis, probs)
             if probs.argmax() == 0:
