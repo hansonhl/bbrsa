@@ -68,21 +68,24 @@ class Evaluator(BBRSAABC):
                                           self.logger)
 
         torch.manual_seed(3939)
-        self._log('---- Evaluating incremental s1 ----\n')
+        self._log('---- Evaluating base s0 ----\n')
 
         total_correct = 0.
-        total_srcs = len(src)
+        total_srcs = 0.
 
         for sent in tqdm(src):
             model_in, _ = distractor.generate([sent])
-            model_out = model.incremental_s1(model_in, beam_size=10, n_best=1,
+            model_out = model.summary_s0(model_in, beam_size=10, n_best=1,
                                              diverse_beam='rank')
             hypothesis = model_out[0][0]
             probs = self.get_l1_probs(model_in, hypothesis)
-            if verbose:
-                self._display_one_result(model_in, hypothesis, probs)
             if probs.argmax() == 0:
                 total_correct += 1
+            total_srcs += 1
+            if verbose:
+                self._display_one_result(model_in, hypothesis, probs)
+                self._log('Accuracy up to now: {:.4}'.format(total_correct/total_srcs))
+
 
         return total_correct / total_srcs
 
