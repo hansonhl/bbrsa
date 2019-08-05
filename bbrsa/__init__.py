@@ -1,3 +1,5 @@
+from bbrsa.configopts import ConfigOpts
+
 ONMT_DIR = '../myOpenNMT'
 
 _default_opts_dict = {
@@ -29,4 +31,4 @@ _default_opts_dict = {
     'bert_distr_ensure_different': True,
 }
 
-DEFAULT_OPTS = ConfigOpts(default_opts_dict)
+DEFAULT_OPTS = ConfigOpts(_default_opts_dict)
