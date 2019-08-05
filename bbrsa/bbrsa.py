@@ -96,15 +96,19 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return preds
 
 
-    def _run_s0(self, src, beam_size, n_best, truncate, diverse_beam,
-                dump=None):
+    def _run_s0(self, src, opts, dump=None):
         with torch.no_grad():
+            beam_size = opts.beam_size
+            n_best = opts.n_best
+            truncate = opts.truncate
+            diverse_beam = opts.diverse_beam
+
             preds = []
             # all_log_probs = []
             # all_curr_preds = []
             s0 = self.s0
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-            s0.init_batch_iterator(src=srcs, tgt=tgts, truncate=truncate)
+            s0.init_batch_iterator(src=src, truncate=truncate)
             if dump is not None:
                 dump.init(src[0])
 
@@ -139,9 +143,9 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # self._log('argmax of log_probs: {}'.format())
 
                     if diverse_beam is not None:
-                        beam.advance(log_probs, attn, opts, verbose=verbose)
+                        beam.advance(log_probs, attn, opts=opts)
                     else:
-                        beam.advance(log_probs, attn, verbose=verbose)
+                        beam.advance(log_probs, attn)
 
                     # self._log('step {}, topk_probs {}'.format(step, beam.beam.topk_log_probs))
                     # self._log('step {}, attn {}'.format(step, attn))
@@ -185,12 +189,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
         self._log('==== Beginning Summary with S0 ====', logging.INFO)
 
-        preds, _ = self._run_s0(
-            src,
-            beam_size=beam_size,
-            n_best=n_best,
-            truncate=truncate,
-            diverse_beam=diverse_beam)
+        preds, _ = self._run_s0(src, opts)
 
         if dump is not None:
             self._log('dump.tgt len: {}, dump.attns len:{}' \
@@ -294,20 +293,14 @@ class ONMTSummaryRSA(BatchBeamRSA):
         truncate = opts.truncate
         diverse_beam = opts.diverse_beam
 
-        assert isinstance(self.pragmatics, BasicPragmatics), \
+        assert (not isinstance(self.pragmatics, GrowingAlphaPragmatics)) \
+            and (not isinstance(self.pragmatics, MemoizedListener)), \
             'Must use BasicPragmaitcs for global S1!'
         assert (n_best <= beam_size), 'n_best must be less than beam size!'
 
         self._log('==== Beggining Summary with global S1 ====', logging.INFO)
 
-        candidates, _ = self._run_s0(
-            src,
-            beam_size=beam_size,
-            n_best=beam_size,
-            truncate=truncate,
-            diverse_beam=diverse_beam,
-            dump=None)
-        print('candidates', candidates)
+        candidates, _ = self._run_s0(src, opts, dump=None)
         # candidates has shape [num_srcs, num_candidates]
 
         d_factor = self.distractor.d_factor
@@ -319,7 +312,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
 
         tgt_probs = s1_probs[:, 0, :]
         n_best_probs, n_best_idxs = tgt_probs.topk(n_best, dim=1)
-        print(n_best_probs.exp())
+
         res = [[candidates[i][j] for j in idxs] for i, idxs in enumerate(n_best_idxs)]
         return res
 
@@ -342,6 +335,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
             d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             src, batch_size = self.distractor.generate(src, opts)
+
             s0.init_batch_iterator(
                 src=src,
                 batch_size=batch_size,
@@ -353,6 +347,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
+
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
                 s0.dec_states_augment(beam_size)
@@ -402,7 +397,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                             beam.current_pred.view(-1))
                     else:
                         s1_log_probs = self.pragmatics.inference(
-                            s0_log_probs, opts)                        )
+                            s0_log_probs, opts)
 
                     # s1_log_probs.shape = [B*b, d, V]
 
@@ -414,9 +409,9 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # attn.shape = [1, B*b, L]
 
                     if diverse_beam is not None:
-                        beam.advance(log_probs, attn, opts, verbose=verbose)
+                        beam.advance(beam_log_probs, attn, opts=opts)
                     else:
-                        beam.advance(log_probs, attn, verbose=verbose)
+                        beam.advance(beam_log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
                     if any_beam_is_finished:

@@ -67,7 +67,7 @@ class Evaluator(BBRSAABC):
                                           distractor.d_factor,
                                           self.logger)
 
-        torch.manual_seed(3939)
+        torch.manual_seed(opts.seed)
         self._log('---- Evaluating incremental s1 ----\n')
 
         total_correct = 0.

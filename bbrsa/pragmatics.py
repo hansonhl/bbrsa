@@ -6,7 +6,6 @@ from bbrsa.abstract_classes import Pragmatics
 class BasicPragmatics(Pragmatics):
     def __init__(self, logger=None):
         super().__init__(logger)
-        self.alpha = alpha
 
     def l1(self, log_probs, opts, *args):
         """Pragmatic listener based on top of s0"""
@@ -45,13 +44,12 @@ class BasicPragmatics(Pragmatics):
 class GrowingAlphaPragmatics(BasicPragmatics):
     def __init__(self, logger=None):
         super().__init__(logger)
-        # this alpha is used as final alpha
 
     def s1(self, s0_log_probs, l1_log_probs, opts, step):
         """Pragmatic speaker, alpha grows incrementally until it reaches self.alpha"""
-        grow_steps = opts.alpha_grow_steps
+        grow_steps = opts.prag_alpha_grow_steps
         if step is not None:
-            alpha = min(step, grow_steps) / grow_steps * opts.alpha # grows in  steps
+            alpha = min(step, grow_steps) / grow_steps * opts.prag_alpha # grows in  steps
 
         adjusted = alpha * l1_log_probs
         isnan_mask = torch.isnan(adjusted)

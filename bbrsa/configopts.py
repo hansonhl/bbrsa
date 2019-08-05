@@ -2,18 +2,17 @@
 
 class ConfigOpts(object):
     def __init__(self, d):
-        super().__setattr__('_configs', {})
-        self.reset_default(d)
+        self.reinit(d)
 
     def reset(self):
         for cfg in self._configs.values():
             cfg.reset()
 
     def reinit(self, defaults):
-        self._configs = {}
+        super().__setattr__('_configs', {})
         for k, x in defaults.items():
             if isinstance(x, tuple):
-                self._configs[k] = ConfigItem(k, tup[0], tup[1])
+                self._configs[k] = ConfigItem(k, x[0], x[1])
             else:
                 self._configs[k] = ConfigItem(k, x, type(x))
 
@@ -26,7 +25,7 @@ class ConfigOpts(object):
         # attributes in `values` dict must already exist
         if values is not None:
             self.set_values(values)
-        for cfg in self._configs.items():
+        for cfg in self._configs.values():
             if cfg._value is not None:
                 cfg.default = cfg._value
                 cfg.reset()
@@ -94,9 +93,9 @@ class ConfigItem(object):
     @property
     def value(self):
         if self._value is None:
-            return self.default
+            return self._default
         else:
-            return self.value
+            return self._value
 
     @value.setter
     def value(self, x):

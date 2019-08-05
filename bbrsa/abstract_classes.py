@@ -103,9 +103,8 @@ class Beam(BBRSAABC):
         pass
 
 class BatchDistractor(BBRSAABC):
-    def __init__(self, batch_size, logger=None):
+    def __init__(self, logger=None):
         super().__init__(logger)
-        self.orig_batch_size = batch_size
 
     @abstractmethod
     def generate(self, src, opts):
