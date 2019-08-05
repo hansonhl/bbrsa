@@ -16,13 +16,18 @@ from bbrsa.utils import init_logger, display
 # from evaluators import Evaluator
 # from utils import init_logger, display
 
-logger = init_logger(no_format=True, print_level=logging.DEBUG)
-eval_s0 = ONMTSummarizer(config_path='onmt_configs/giga_split2.yml', logger=logger)
-evaluator = Evaluator(eval_s0, add_tags=False, logger=logger)
+opts = bbrsa.DEFAULT_OPTS
+part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_nocov_step_59156_valacc48.57_ppl15.51.pt'
+part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_nocov_step_59156.pt'
 
-pragmatics = BasicPragmatics(alpha=3)
-summ_s0 = ONMTSummarizer(config_path='onmt_configs/giga_split1.yml', logger=logger)
-distractor = NextExampleDistractor(batch_size=summ_s0.default_batch_size)
+
+logger = init_logger(no_format=True, print_level=logging.DEBUG)
+eval_s0 = ONMTSummarizer(opts, part1_model_path)
+evaluator = Evaluator(eval_s0, logger=logger)
+
+summ_s0 = ONMTSummarizer(opts, part2_model_path, logger=logger)
+pragmatics = BasicPragmatics()
+distractor = NextExampleDistractor()
 model = ONMTSummaryRSA(summ_s0, pragmatics, distractor)
 
 
@@ -32,7 +37,7 @@ with open('/home/hansonlu/myOpenNMT/data/giga/input_clean.txt', 'r') as f:
     srcs = [s.strip() for s in f.readlines()]
 
 
-acc = evaluator.split_evaluate(model, distractor, srcs, verbose=True)
+acc = evaluator.split_evaluate(model, distractor, srcs, opts, verbose=True)
 print('Accuracy: {:.5}'.format(acc))
 
 # pred = model.summarize_s0(src, beam_size=10)
