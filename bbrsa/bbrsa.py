@@ -1,20 +1,18 @@
 import sys, os
 import torch
 import logging
-from abc import ABC, abstractmethod
 
+from bbrsa.abstract_classes import BBRSAABC
 from bbrsa.beam import ONMTBeam
 from bbrsa.distractors import NextExampleDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
 from bbrsa.utils import idx_remap, scramble2tgt, chunks
 from torchtext.data.batch import Batch as TorchBatch
 
-class BatchBeamRSA(ABC):
-    pass
 
-class ONMTSummaryRSA(BatchBeamRSA):
+class ONMTSummaryRSA(BBRSAABC):
     def __init__(self, s0, pragmatics, distractor, logger=None):
-        self.logger = logger
+        super().__init__(logger)
 
         self.s0 = s0
         self.distractor = distractor
@@ -334,14 +332,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
             s0 = self.s0
             d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
+            self._info('-- Generating distractors')
             src, batch_size = self.distractor.generate(src, opts)
 
-            self._log('Initializing batch iterator', logging.INFO)
+            self._info('-- Initializing batch iterator')
             s0.init_batch_iterator(
                 src=src,
                 batch_size=batch_size,
                 truncate=truncate)
-            self._log('Finished initializing batch iterator', logging.INFO)
+            self._log('-- Finished initializing batch iterator')
             batch_count = 0
 
             for batch in s0.data_iter:

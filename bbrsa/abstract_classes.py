@@ -13,6 +13,18 @@ class BBRSAABC(ABC):
             level = logging.DEBUG if level is None else level
             self.logger.log(level, message)
 
+    def _info(self, message):
+        if self.logger is None:
+            print(message)
+        else:
+            self.logger.log(logging.INFO, message)
+
+    def _debug(self, message):
+        if self.logger is None:
+            print(message)
+        else:
+            self.logger.log(logging.DEBUG, message)
+
 
 class LiteralSpeaker(BBRSAABC):
     def __init__(self, logger=None):

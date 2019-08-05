@@ -85,13 +85,16 @@ class NextNDistractor(BatchDistractor):
 
 class BertDistractor(BatchDistractor):
     """Change words that BERT attend to with BERT's own predictions"""
-    def __init__(self, verbose=False, logger=None):
+    def __init__(self, opts, logger=None):
         super().__init__(logger)
         self._d_factor = 2
-        self.verbose = verbose
+        self.gpu = opts.gpu
+        if self.gpu:
+            self._info('---- Using GPU')
+        self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
 
         # initialize bert
-        self._log('Initializing Bert models for distractor', logging.INFO)
+        self._info('---- Initializing Bert models for distractor')
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         tokenizer = self.tokenizer
         self.model = BertModel.from_pretrained('bert-base-uncased',
@@ -99,7 +102,10 @@ class BertDistractor(BatchDistractor):
         self.model.eval()
         self.mask_model = BertForMaskedLM.from_pretrained('bert-base-uncased')
         self.mask_model.eval()
-        self._log('Finished initializing', logging.INFO)
+        if self.gpu:
+            self.model = self.model.cuda()
+            self.mask_model = self.mask_model.cuda()
+        self._info('---- Finished initializing')
 
 
         self.pad_token = tokenizer.pad_token
@@ -112,7 +118,8 @@ class BertDistractor(BatchDistractor):
         # insignificant tokens to filter out
         self.ignore_toks = ['[CLS]', '[SEP]', self.unk_token]
         ignore_ids = tokenizer.convert_tokens_to_ids(self.ignore_toks)
-        self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8)
+        self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8,
+                                      device=self.device)
         self.ignore_mask[ignore_ids] = 0
 
         self.generate_methods = ['layer0_attn', 'unmasked_surprisal']
@@ -158,56 +165,36 @@ class BertDistractor(BatchDistractor):
         token_remap_idxs = [_bert_token_remap(s, t) for s, t in \
             zip(str_cleaned_up, str_tokens)]
         indexed_tokens = [tokenizer.convert_tokens_to_ids(t) for t in str_tokens]
-        seq_lens = torch.LongTensor(list(map(len, indexed_tokens)))
-        tok_id_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()), \
-            dtype=torch.long)
-        attn_mask_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()), \
-            dtype=torch.long)
+        seq_lens = torch.tensor(list(map(len, indexed_tokens)),
+            dtype=torch.long, device=self.device)
+        tok_id_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()),
+            dtype=torch.long, device=self.device)
+        attn_mask_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()),
+            dtype=torch.long, device=self.device)
         pad_idx = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]
         tok_id_tensor.fill_(pad_idx)
 
         for idx, (seq, seqlen) in enumerate(zip(indexed_tokens, seq_lens)):
-            tok_id_tensor[idx, :seqlen] = torch.LongTensor(seq)
+            tok_id_tensor[idx, :seqlen] = torch.tensor(seq, dtype=torch.long,
+                device=self.device)
             attn_mask_tensor[idx, :seqlen] = 1
 
         scrm_seq_lens, scrm_idxs = seq_lens.sort(0, descending=True)
         scrm_tok_id_tensor = tok_id_tensor[scrm_idxs]
-        scrm_str_tokens = [str_tokens[i.item()] for i in scrm_idxs]
+        scrm_str_tokens = [str_tokens[i] for i in scrm_idxs]
         scrm_attn_mask = attn_mask_tensor[scrm_idxs]
-        scrm_tok_remap = [token_remap_idxs[i.item()] for i in scrm_idxs]
+        scrm_tok_remap = [token_remap_idxs[i] for i in scrm_idxs]
 
         return scrm_tok_id_tensor, scrm_str_tokens, scrm_seq_lens, \
             scrm_attn_mask, scrm_idxs, scrm_tok_remap
 
-    def generate(self, src, opts):
-        """Replace top 5 salient words in Bert to get 1 distractor
-
-        Measure of salience is determined by `method` parameter:
-
-        `layer0_attn` uses the total attention on each word in the source
-        article.
-
-        `unmasked_surprisal` uses -log(prob(word)) for each position in the
-        source given by the BERT language model, with the source as input.
-
-        Args:
-            src: list of strings
-            opts: options
-
-        Returns:
-            list of input strings coupled with their distractors
-        """
-        self.orig_batch_size = opts.batch_size
-
+    def _generate_batch(self, src, opts):
         method = opts.bert_distr_method
         self._d_factor = opts.bert_distr_d_factor
         salient_topk = opts.bert_distr_salient_topk
         mask_topk = opts.bert_distr_mask_topk
         repl_search_topk = opts.bert_distr_repl_search_topk
         ensure_different = opts.bert_distr_ensure_different
-
-        assert method in self.generate_methods, \
-            'invalid BERT distractor generation method!'
 
         layer0_attn = (method == 'layer0_attn')
         unm_surp = (method == 'unmasked_surprisal')
@@ -234,7 +221,7 @@ class BertDistractor(BatchDistractor):
             scores = outputs[0]
             log_probs = scores / scores.logsumexp(dim=2, keepdim=True)
             # scores and log_probs have shape [batch_size, max_src_len, vocab_size]
-            r = torch.arange(log_probs.shape[1])
+            r = torch.arange(log_probs.shape[1], device=self.device)
             topk_idxs = []
 
             for sent_log_probs, word_ids, seq_len in zip(log_probs, batch_tensor, seq_lens):
@@ -265,15 +252,17 @@ class BertDistractor(BatchDistractor):
             mask_output = self.mask_model(masked_batch, attention_mask=attn_mask)
 
         all_distractors = []
+        scrm_src = [src[i] for i in scrm_idxs]
 
         for pred, masked_idxs, src_tok_ids, remap_idxs, src_str in \
-                zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, src):
+                zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, scrm_src):
             # get top2 predictions for masked positions
             _, repl_candidates = pred[masked_idxs].topk(repl_search_topk, dim=1)
 
-            repl_idxs = torch.randint(repl_search_topk, (repl_candidates.shape[0],))
+            repl_idxs = torch.randint(repl_search_topk, (repl_candidates.shape[0],),
+                                      device=self.device)
 
-            rng = torch.arange(repl_candidates.shape[0])
+            rng = torch.arange(repl_candidates.shape[0], device=self.device)
             subs = repl_candidates[rng, repl_idxs]
 
             # ensure substitutions are different from orig toks
@@ -285,10 +274,10 @@ class BertDistractor(BatchDistractor):
                 subs[duplicate_mask] = repl_candidates[duplicate_mask, new_repl_idxs]
 
             # get substituted sentence
-            sub_tok_ids = src_tok_ids.clone().detach()
-            sub_tok_ids[masked_idxs] = subs
-            sub_tok_ids = sub_tok_ids[sub_tok_ids != self.pad_id]
-            sub_tok_strs = tokenizer.convert_ids_to_tokens(sub_tok_ids.tolist())
+            sub_sent = src_tok_ids.clone().detach()
+            sub_sent[masked_idxs] = subs
+            sub_sent = sub_sent[sub_sent != self.pad_id]
+            sub_tok_strs = tokenizer.convert_ids_to_tokens(sub_sent.tolist())
             all_distractors.append(_retokenize(src_str, sub_tok_strs, remap_idxs))
 
         # reorder and group together
@@ -301,6 +290,43 @@ class BertDistractor(BatchDistractor):
         # if self.verbose:
         #     self._log('Bert Generated these distractors:\n')
         #     self._log(res)
+        return res
+
+
+    def generate(self, src, opts):
+        """Replace top 5 salient words in Bert to get 1 distractor
+
+        Measure of salience is determined by `method` parameter:
+
+        `layer0_attn` uses the total attention on each word in the source
+        article.
+
+        `unmasked_surprisal` uses -log(prob(word)) for each position in the
+        source given by the BERT language model, with the source as input.
+
+        Args:
+            src: list of strings
+            opts: options
+
+        Returns:
+            list of input strings coupled with their distractors
+        """
+        self.orig_batch_size = opts.batch_size
+
+        assert opts.bert_distr_method in self.generate_methods, \
+            'invalid BERT distractor generation method!'
+
+        res = []
+        tot_batches = len(src) // self.orig_batch_size
+
+        for i, batch in enumerate(chunks(src, self.orig_batch_size)):
+            if i % 10 == 9:
+                self._info('-- Bert distractor generation batch {}/{}'\
+                           .format(i+1, tot_batches))
+            res += self._generate_batch(batch, opts)
+
+        print('len_res', len(res))
+
         return res, self.new_batch_size
 
 

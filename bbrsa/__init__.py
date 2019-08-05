@@ -3,6 +3,7 @@ from bbrsa.configopts import ConfigOpts
 ONMT_DIR = '../myOpenNMT'
 
 _default_opts_dict = {
+    'gpu': False,
     'random_seed': 3939, # used for bert distractor generation
     'dummy_src': 'data/giga_small_input.txt', # need this for opennmt model to be loaded
     'batch_size': 20,
