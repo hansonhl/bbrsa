@@ -324,7 +324,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
         truncate = opts.truncate
         diverse_beam = opts.diverse_beam
 
-        self._log('==== Beginning Summary with distractor ====')
+        self._log('==== Beginning Summary with incremental s1 ====')
         assert self.distractor is not None, 'Must specify distractor!'
         assert self.pragmatics is not None, 'Must specify pragmatics'
         preds = []
@@ -336,12 +336,17 @@ class ONMTSummaryRSA(BatchBeamRSA):
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             src, batch_size = self.distractor.generate(src, opts)
 
+            self._log('Initializing batch iterator', logging.INFO)
             s0.init_batch_iterator(
                 src=src,
                 batch_size=batch_size,
                 truncate=truncate)
+            self._log('Finished initializing batch iterator', logging.INFO)
+            batch_count = 0
 
             for batch in s0.data_iter:
+                batch_count += 1
+                self._log('Processing batch {}\n'.format(batch_count), logging.INFO)
                 scramble_idxs = batch.indices
 
                 # batch.indices contains the scrambling index
