@@ -39,8 +39,6 @@ class ProbAttnDump(object):
             json.dump(data, f)
 
 
-
-
 def init_logger(no_format=False, print_level=logging.DEBUG, log_file=None,
     log_file_level=logging.DEBUG, log_mode='a'):
     """Initialize logger""" # modified from onmt/utils/logging.py
@@ -82,17 +80,19 @@ def display(names, preds):
             print(names[j] + ': ' + s.strip())
         print('')
 
-def onmt_translator_builder(config_path, logger=None):
+def onmt_translator_builder(model_ckpt_path, my_opts, logger=None):
     if logger is not None:
-        logger.info('Building ONMT translator with configs from ' + config_path)
+        logger.info('Building ONMT translator with model from ' + model_ckpt_path)
     else:
-        print('Building ONMT translator with configs from ' + config_path)
+        print('Building ONMT translator with model from ' + model_ckpt_path)
 
-    parser = ArgumentParser(default_config_files=[config_path])
+    parser = ArgumentParser()
     opts.config_opts(parser)
     opts.translate_opts(parser)
 
-    opt = parser.parse_args(['-config', config_path])
+    arglist = ['-model', model_ckpt_path] + opts_to_list(my_opts)
+
+    opt = parser.parse_args(arglist)
 
     ArgumentParser.validate_translate_opts(opt)
     translator = build_translator(opt, report_score=True, logger=logger)
@@ -101,7 +101,37 @@ def onmt_translator_builder(config_path, logger=None):
     else:
         print('Finished building ONMT translator.')
 
-    return translator, opt
+    return translator
+
+def opts_to_list(o):
+    res = []
+    lookup = {
+        'batch_size': '-batch_size',
+        'beam_size': '-beam_size',
+        'dummy_src': '-src',
+        'coverage_penalty': '-coverage_penalty',
+        'coverage_penalty_beta': '-beta',
+        'length_penalty': '-length_penalty',
+        'length_penalty_alpha': '-alpha',
+        'block_ngram_repeat': '-block_ngram_repeat',
+        'min_length': '-min_length',
+        'stepwise_penalty': '-stepwise_penalty'
+    }
+    for k, v in o._configs.items():
+        if k not in lookup:
+            continue
+        val = str(v.value)
+        if val == 'False':
+            continue
+        res.append(lookup[k])
+        if val == 'True':
+            continue
+        if val == 'None':
+            val = 'none'
+        res.append(val)
+        if k == 's0_block_ngram_repeat':
+            res += ['-ignore_when_blocking', ".", "</t>", "<t>"]
+    return res
 
 
 def scramble2tgt(idxs, d_factor):

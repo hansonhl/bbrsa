@@ -27,9 +27,6 @@ class ONMTSummaryRSA(BatchBeamRSA):
             level = logging.DEBUG if level is None else level
             self.logger.log(level, message)
 
-    def set_alpha(self, alpha):
-        self.pragmatics.alpha = alpha
-
     def itos_single(self, idxs, idx_in_batch, src=True):
         """Convert one single array to text"""
         field_name = 'src' if src else 'tgt'
@@ -99,15 +96,19 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return preds
 
 
-    def _run_s0(self, src, beam_size=1, n_best=1, truncate=None, diverse_beam=None,
-                dump=None):
+    def _run_s0(self, src, opts, dump=None):
         with torch.no_grad():
+            beam_size = opts.beam_size
+            n_best = opts.n_best
+            truncate = opts.truncate
+            diverse_beam = opts.diverse_beam
+
             preds = []
             # all_log_probs = []
             # all_curr_preds = []
             s0 = self.s0
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-            s0.init_batch_iterator(src)
+            s0.init_batch_iterator(src=src, truncate=truncate)
             if dump is not None:
                 dump.init(src[0])
 
@@ -141,8 +142,10 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # self._log('log_probs.shape: {}'.format(log_probs.shape))
                     # self._log('argmax of log_probs: {}'.format())
 
-                    verbose = (step == 3)
-                    beam.advance(log_probs, attn, verbose=verbose)
+                    if diverse_beam is not None:
+                        beam.advance(log_probs, attn, opts=opts)
+                    else:
+                        beam.advance(log_probs, attn)
 
                     # self._log('step {}, topk_probs {}'.format(step, beam.beam.topk_log_probs))
                     # self._log('step {}, attn {}'.format(step, attn))
@@ -178,17 +181,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
             return preds, beam
         # end with torch.no_grad()
 
-    def summarize_s0(self, src, beam_size=1, n_best=1, truncate=None,
-                          diverse_beam=None, dump=None):
+    def summarize_s0(self, src, opts, dump=None):
+        beam_size = opts.beam_size
+        n_best = opts.n_best
+        truncate = opts.truncate
+        diverse_beam = opts.diverse_beam
+
         self._log('==== Beginning Summary with S0 ====', logging.INFO)
 
-        preds, _ = self._run_s0(
-            src,
-            beam_size=beam_size,
-            n_best=n_best,
-            truncate=truncate,
-            diverse_beam=diverse_beam,
-            dump=dump)
+        preds, _ = self._run_s0(src, opts)
 
         if dump is not None:
             self._log('dump.tgt len: {}, dump.attns len:{}' \
@@ -196,7 +197,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
             self._log('src: {}, tgt: {}'.format(dump.src, dump.tgt))
         return preds #, all_log_probs, curr_preds
 
-    def _get_s0_log_probs(self, srcs, summaries, d_factor, truncate=None):
+    def _get_s0_log_probs(self, srcs, summaries, d_factor, truncate):
         """Get S0(u|w) for different w's and u's.
 
         Args:
@@ -271,12 +272,13 @@ class ONMTSummaryRSA(BatchBeamRSA):
         return all_sent_probs
 
 
-    def global_s1(self, src, beam_size=5, n_best=1, truncate=None,
-                  diverse_beam=None):
+    def global_s1(self, src, opts):
         """Summarize source text using global RSA
 
         Args:
             src: articles to summarize, list of strings
+
+            ### below are in opts
             beam_size: beam size during beam search of s0, equivalent to number
                 of candidate utterances for each article, used as the set of
                 possible utterances for the pragmatic l1 and s1, default 5.
@@ -286,40 +288,42 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 default None, which does not truncate it
             diverse_beam: name of strategy for diverse beam search in s0
         """
-        assert isinstance(self.pragmatics, BasicPragmatics), \
+        beam_size = opts.beam_size
+        n_best = opts.n_best
+        truncate = opts.truncate
+        diverse_beam = opts.diverse_beam
+
+        assert (not isinstance(self.pragmatics, GrowingAlphaPragmatics)) \
+            and (not isinstance(self.pragmatics, MemoizedListener)), \
             'Must use BasicPragmaitcs for global S1!'
         assert (n_best <= beam_size), 'n_best must be less than beam size!'
 
         self._log('==== Beggining Summary with global S1 ====', logging.INFO)
 
-        candidates, _ = self._run_s0(
-            src,
-            beam_size=beam_size,
-            n_best=beam_size,
-            truncate=truncate,
-            diverse_beam=diverse_beam,
-            dump=None)
-        print('candidates', candidates)
+        candidates, _ = self._run_s0(src, opts, dump=None)
         # candidates has shape [num_srcs, num_candidates]
 
         d_factor = self.distractor.d_factor
-        srcs, batch_size = self.distractor.generate(src)
+        srcs, batch_size = self.distractor.generate(src, opts)
 
-        s0_probs = self._get_s0_log_probs(srcs, candidates, d_factor,
-                                          truncate=truncate)
-        s1_probs = self.pragmatics.inference(s0_probs)
+        s0_probs = self._get_s0_log_probs(srcs, candidates, d_factor, truncate)
+        s1_probs = self.pragmatics.inference(s0_probs, opts)
         # both s0_probs and s1_probs have shape [num_srcs, d_factor, num_candidates]
 
         tgt_probs = s1_probs[:, 0, :]
         n_best_probs, n_best_idxs = tgt_probs.topk(n_best, dim=1)
-        print(n_best_probs.exp())
+
         res = [[candidates[i][j] for j in idxs] for i, idxs in enumerate(n_best_idxs)]
         return res
 
 
-    def incremental_s1(self, src, beam_size=1, n_best=1, truncate=None,
-                       diverse_beam=None):
+    def incremental_s1(self, src, opts):
         """Summarize source text using incremental RSA."""
+        beam_size = opts.beam_size
+        n_best = opts.n_best
+        truncate = opts.truncate
+        diverse_beam = opts.diverse_beam
+
         self._log('==== Beginning Summary with distractor ====')
         assert self.distractor is not None, 'Must specify distractor!'
         assert self.pragmatics is not None, 'Must specify pragmatics'
@@ -330,7 +334,8 @@ class ONMTSummaryRSA(BatchBeamRSA):
             s0 = self.s0
             d_factor = self.distractor.d_factor
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-            src, batch_size = self.distractor.generate(src)
+            src, batch_size = self.distractor.generate(src, opts)
+
             s0.init_batch_iterator(
                 src=src,
                 batch_size=batch_size,
@@ -342,6 +347,7 @@ class ONMTSummaryRSA(BatchBeamRSA):
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
                 s0.encode(batch)
+
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
                 s0.dec_states_augment(beam_size)
@@ -383,12 +389,15 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     # s1_log_probs = s0_log_probs # for debug
                     if isinstance(self.pragmatics, GrowingAlphaPragmatics):
                         s1_log_probs = self.pragmatics.inference(
-                            s0_log_probs, step)
-                    else:
+                            s0_log_probs, opts, step)
+                    elif isinstance(self.pragmatics, MemoizedListener):
                         s1_log_probs = self.pragmatics.inference(
-                            s0_log_probs,
+                            s0_log_probs, opts,
                             beam.current_origin,
                             beam.current_pred.view(-1))
+                    else:
+                        s1_log_probs = self.pragmatics.inference(
+                            s0_log_probs, opts)
 
                     # s1_log_probs.shape = [B*b, d, V]
 
@@ -399,7 +408,10 @@ class ONMTSummaryRSA(BatchBeamRSA):
                     attn = _reshape_attn(attn, beam_size, d_factor, scramble_idxs)
                     # attn.shape = [1, B*b, L]
 
-                    beam.advance(beam_log_probs, attn)
+                    if diverse_beam is not None:
+                        beam.advance(beam_log_probs, attn, opts=opts)
+                    else:
+                        beam.advance(beam_log_probs, attn)
 
                     any_beam_is_finished = beam.any_beam_is_finished
                     if any_beam_is_finished:

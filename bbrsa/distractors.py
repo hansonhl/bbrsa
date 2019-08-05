@@ -5,28 +5,30 @@ from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM
 
 class AsIsDistractor(BatchDistractor):
     """Use distractors that are already contained in the batch"""
-    def __init__(self, batch_size, d_factor, logger=None):
-        super().__init__(batch_size, logger)
+    def __init__(self, d_factor, logger=None):
+        super().__init__(logger)
         self._d_factor = d_factor
 
     @property
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts=None):
+        self.orig_batch_size = opts.batch_size
         return src, self.new_batch_size
 
 class NextExampleDistractor(BatchDistractor):
     """Use next example in batch as distractor"""
-    def __init__(self, batch_size, logger=None):
-        super().__init__(batch_size, logger)
+    def __init__(self, logger=None):
+        super().__init__(logger)
         self._d_factor = 2
 
     @property
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
+        self.orig_batch_size = opts.batch_size
         new_src = []
         for batch in chunks(src, self.orig_batch_size):
             for i, x in enumerate(batch):
@@ -37,15 +39,16 @@ class NextExampleDistractor(BatchDistractor):
 
 class IdenticalDistractor(BatchDistractor):
     """Use the sample itself as distractor"""
-    def __init__(self, batch_size, logger=None):
-        super().__init__(batch_size, logger)
+    def __init__(self, logger=None):
+        super().__init__(logger)
         self._d_factor = 2
 
     @property
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
+        self.orig_batch_size = opts.batch_size
         new_src = []
         for x in src:
             new_src.append(x)
@@ -54,16 +57,20 @@ class IdenticalDistractor(BatchDistractor):
 
 class NextNDistractor(BatchDistractor):
     """Use next N examples in batch as distractor"""
-    def __init__(self, batch_size, N, logger=None):
-        assert batch_size >= N+1, 'Invalid N!'
-        super().__init__(batch_size, logger)
-        self._d_factor = N+1
+    def __init__(self, logger=None):
+        super().__init__(logger)
+        self._d_factor = 4
 
     @property
     def d_factor(self):
         return self._d_factor
 
-    def generate(self, src):
+    def generate(self, src, opts):
+        N = opts.nextn_distr_N
+        assert opts.batch_size >= N+1, 'Invalid N!'
+        self._d_factor = N+1
+        self.orig_batch_size = opts.batch_size
+
         new_src = []
         for batch in chunks(src, self.orig_batch_size):
             if len(batch) < self.d_factor:
@@ -78,8 +85,8 @@ class NextNDistractor(BatchDistractor):
 
 class BertDistractor(BatchDistractor):
     """Change words that BERT attend to with BERT's own predictions"""
-    def __init__(self, batch_size, verbose=False, logger=None):
-        super().__init__(batch_size, logger)
+    def __init__(self, verbose=False, logger=None):
+        super().__init__(logger)
         self._d_factor = 2
         self.verbose = verbose
 
@@ -103,7 +110,6 @@ class BertDistractor(BatchDistractor):
         self.unk_id = tokenizer.convert_tokens_to_ids([self.unk_token])[0]
 
         # insignificant tokens to filter out
-        self.attn_top_k = 15
         self.ignore_toks = ['[CLS]', '[SEP]', self.unk_token]
         ignore_ids = tokenizer.convert_tokens_to_ids(self.ignore_toks)
         self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8)
@@ -173,8 +179,7 @@ class BertDistractor(BatchDistractor):
         return scrm_tok_id_tensor, scrm_str_tokens, scrm_seq_lens, \
             scrm_attn_mask, scrm_idxs, scrm_tok_remap
 
-    def generate(self, src, method='unmasked_surprisal', mask_topk=5,
-                 repl_search_topk=5, ensure_different=True):
+    def generate(self, src, opts):
         """Replace top 5 salient words in Bert to get 1 distractor
 
         Measure of salience is determined by `method` parameter:
@@ -187,16 +192,20 @@ class BertDistractor(BatchDistractor):
 
         Args:
             src: list of strings
-            method: method for measure of salience, one among
-                `[layer0_attn, unmasked_surprisal]`
-            repl_search_topk: randomly sample word for replacement from
-                topk predictions
-            ensure_different: ensures different word is replaced during distractor
-                generation.
+            opts: options
 
         Returns:
             list of input strings coupled with their distractors
         """
+        self.orig_batch_size = opts.batch_size
+
+        method = opts.bert_distr_method
+        self._d_factor = opts.bert_distr_d_factor
+        salient_topk = opts.bert_distr_salient_topk
+        mask_topk = opts.bert_distr_mask_topk
+        repl_search_topk = opts.bert_distr_repl_search_topk
+        ensure_different = opts.bert_distr_ensure_different
+
         assert method in self.generate_methods, \
             'invalid BERT distractor generation method!'
 
@@ -218,7 +227,7 @@ class BertDistractor(BatchDistractor):
             summed = attn.sum(dim=2).sum(dim=1) # [batch_size, max_src_len]
             summed = summed / summed.sum(dim=1, keepdim=True) # normalize
 
-            _, topk_idxs = summed.topk(self.attn_top_k, sorted=True)
+            _, topk_idxs = summed.topk(salient_topk, sorted=True)
         elif unm_surp:
             with torch.no_grad():
                 outputs = self.mask_model(batch_tensor, attention_mask=attn_mask)
@@ -230,7 +239,7 @@ class BertDistractor(BatchDistractor):
 
             for sent_log_probs, word_ids, seq_len in zip(log_probs, batch_tensor, seq_lens):
                 surprisal = (-sent_log_probs[r, word_ids])[:seq_len]
-                _, topk = surprisal.topk(self.attn_top_k, sorted=True)
+                _, topk = surprisal.topk(salient_topk, sorted=True)
                 topk_idxs.append(topk)
 
         all_masked_tensors = []

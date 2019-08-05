@@ -103,12 +103,11 @@ class Beam(BBRSAABC):
         pass
 
 class BatchDistractor(BBRSAABC):
-    def __init__(self, batch_size, logger=None):
+    def __init__(self, logger=None):
         super().__init__(logger)
-        self.orig_batch_size = batch_size
 
     @abstractmethod
-    def generate(self, src):
+    def generate(self, src, opts):
         return src
 
     # I make this an abstract property so that it is mandatory
@@ -125,7 +124,7 @@ class Pragmatics(BBRSAABC):
         super().__init__(logger)
 
     @abstractproperty
-    def inference(self, probs):
+    def inference(self, probs, opts, *args):
         return probs
 
     def clear_mem(self):

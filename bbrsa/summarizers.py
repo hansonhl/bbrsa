@@ -7,21 +7,19 @@ import onmt.inputters as inputters
 from onmt.utils.misc import tile
 from onmt.translate import TranslationBuilder
 
-DEFAULT_CONFIG_PATH = 'onmt_configs/cnndm.yml'
-ONMT_DIR = '../myOpenNMT'
 INFO = logging.INFO
 DEBUG = logging.DEBUG
 
 class ONMTSummarizer(LiteralSpeaker):
-    def __init__(self, config_path=DEFAULT_CONFIG_PATH, logger=None):
+    def __init__(self, my_opts, model_ckpt_path, logger=None):
         """build summarizer from config"""
         super().__init__(logger)
 
-        self.translator, opt = onmt_translator_builder(config_path, logger)
+        self.translator = onmt_translator_builder(model_ckpt_path, my_opts, logger)
 
         # for batch
         self.data, self.data_iter = None, None
-        self.default_batch_size = opt.batch_size
+        self.default_batch_size = my_opts.batch_size
 
         # Encoder representations
         self.src, self.enc_states, self.memory_bank, self.memory_lengths = \
@@ -39,7 +37,7 @@ class ONMTSummarizer(LiteralSpeaker):
         Args:
             src: a python list of raw input text to be summarized
         """
-        if truncate is not None:
+        if truncate != -1:
             src = _truncate(src, truncate)
             self._log('Truncated src to length {}'.format(truncate), logging.INFO)
             self._log('len of first element is {}'.format(len(src[0].split())))
@@ -148,7 +146,7 @@ class ONMTSummarizer(LiteralSpeaker):
         T.model.decoder.map_state(
             lambda state, dim: state.index_select(dim, select_indices))
 
-    def set_configs(self, beam_size=1, n_best=1):
+    def set_configs(self, beam_size, n_best):
         self.translator.beam_size = beam_size
         self.translator.n_best = n_best
 

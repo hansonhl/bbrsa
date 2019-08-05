@@ -65,8 +65,11 @@ class ONMTBeam(Beam):
                 memory_lengths=s.memory_lengths)
 
 
-    def advance(self, log_probs, attn, verbose=False):
-        self.beam.advance(log_probs, attn, verbose=verbose)
+    def advance(self, log_probs, attn, opts=None, verbose=False):
+        if isinstance(self.beam, RankDiverseBeam):
+            self.beam.advance(log_probs, attn, opts, verbose=verbose)
+        else:
+            self.beam.advance(log_probs, attn, verbose=verbose)
 
     def update_finished(self):
         self.beam.update_finished()
@@ -96,7 +99,8 @@ class ONMTBeam(Beam):
         return self.beam._batch_offset
 
 class RankDiverseBeam(BeamSearch):
-    def advance(self, log_probs, attn, verbose=False):
+    def advance(self, log_probs, attn, opts, verbose=False):
+        rank_lambda = opts.diverse_beam_rank_lambda
         # log_probs has shape [beam_size * batch_size, ext_vocab_size]
         vocab_size = log_probs.size(-1)
 
@@ -127,15 +131,13 @@ class RankDiverseBeam(BeamSearch):
         # length + 1, to include the EOS token
         length_penalty = self.global_scorer.length_penalty(
             step + 1, alpha=self.global_scorer.alpha)
-        if verbose:
-            print('length_penalty', length_penalty)
 
         # Flatten probs into a list of possibilities.
         curr_scores = log_probs / length_penalty
         # curr_scores = log_probs
         _, idxs = torch.sort(curr_scores, dim=1, descending=True)
         ranking = idx_remap(idxs).float() + 1.
-        curr_scores -= 1.5 * ranking
+        curr_scores -= rank_lambda * ranking
 
         curr_scores = curr_scores.reshape(_B, self.beam_size * vocab_size)
 
