@@ -1,4 +1,4 @@
-import sys, os, time, logging
+import sys, os, time, logging, argparse
 import torch
 import bbrsa
 from tqdm import tqdm
@@ -24,6 +24,9 @@ medium_clean_input_path = 'data/giga_test_500.txt'
 part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_nocov_step_59156_valacc48.57_ppl15.51.pt'
 # part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_nocov_step_59156.pt'
 
+parser = argparse.ArgumentParser()
+parser.add_argument('model_path', default=part1_model_path)
+args = parser.parse_args()
 
 logger = init_logger(no_format=True, print_level=logging.DEBUG)
 # eval_s0 = ONMTSummarizer(opts, part1_model_path)
@@ -35,7 +38,7 @@ opts.beam_size = 10
 opts.n_best = 1
 opts.prag_alpha = 3.
 
-summ_s0 = ONMTSummarizer(opts, part1_model_path, logger=logger)
+summ_s0 = ONMTSummarizer(opts, args.model_path, logger=logger)
 pragmatics = BasicPragmatics(opts) # ok
 distractor = BertDistractor(opts)
 model = ONMTSummaryRSA(summ_s0, pragmatics, distractor, opts)
