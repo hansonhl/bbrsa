@@ -11,12 +11,14 @@ from torchtext.data.batch import Batch as TorchBatch
 
 
 class ONMTSummaryRSA(BBRSAABC):
-    def __init__(self, s0, pragmatics, distractor, logger=None):
+    def __init__(self, s0, pragmatics, distractor, opts, logger=None):
         super().__init__(logger)
 
         self.s0 = s0
         self.distractor = distractor
         self.pragmatics = pragmatics
+        self.gpu = opts.gpu
+        self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
 
     def _log(self, message, level=None):
         if self.logger is None:
@@ -110,7 +112,9 @@ class ONMTSummaryRSA(BBRSAABC):
             if dump is not None:
                 dump.init(src[0])
 
-            for batch in s0.data_iter:
+            for i, batch in enumerate(s0.data_iter):
+                if i % 10 == 9:
+                    self._info('Processing batch {}\n'.format(i))
                 s0.encode(batch)
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
@@ -249,8 +253,9 @@ class ONMTSummaryRSA(BBRSAABC):
                 reordered_tgts = batch.tgt.index_select(1, reorder_idxs)
                 masks = (reordered_tgts != pad_token)
 
-                sent_probs = torch.zeros(num_candidates)
-                range_idxs = torch.arange(reordered_probs.shape[0])
+                sent_probs = torch.zeros(num_candidates, device=self.device)
+                range_idxs = torch.arange(reordered_probs.shape[0],
+                                          device=self.device)
                 for i in range(num_candidates):
                     mask = masks[:, i, 0]
                     rng = range_idxs[mask]
@@ -340,13 +345,12 @@ class ONMTSummaryRSA(BBRSAABC):
                 src=src,
                 batch_size=batch_size,
                 truncate=truncate)
-            self._log('-- Finished initializing batch iterator')
-            batch_count = 0
+            self._info('-- Finished initializing batch iterator')
 
-            for batch in s0.data_iter:
-                batch_count += 1
-                self._log('Processing batch {}\n'.format(batch_count), logging.INFO)
-                scramble_idxs = batch.indices
+            for i, batch in enumerate(s0.data_iter):
+                if i % 10 == 9:
+                    self._info('Processing batch {}'.format(i+1))
+                scramble_idxs = batch.indices % batch_size
 
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
@@ -436,7 +440,6 @@ class ONMTSummaryRSA(BBRSAABC):
 
                 batch_preds = self.itos(beam.predictions, batch, reordered=True, d_factor=d_factor)
                 preds += batch_preds
-
             # end for batch
         # end with no_grad
         return preds
@@ -497,11 +500,13 @@ def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor,
     B = res.shape[0] # B = batch_size
 
     if B * d_factor == scramble_idxs.shape[0]:
-        offset = (torch.arange(B) * beam_size).view(-1, 1)
+        B_range = torch.arange(B, device=input.device)
+        offset = (B_range * beam_size).view(-1, 1)
         res -= offset
         res = res.repeat_interleave(d_factor, dim=0) \
                  .index_select(0, scramble_idxs)
-        offset = (torch.arange(res.shape[0]) * beam_size).view(-1, 1)
+        offset_range = torch.arange(res.shape[0], device=input.device)
+        offset = (offset_range * beam_size).view(-1, 1)
         res += offset
         res = res.view(-1)
 
@@ -515,16 +520,16 @@ def _reshape_select_idxs_and_rescramble(input, beam_size, d_factor,
         #      res = [[0,2,4,5,6,7,8,7,8,9],[21,24,22,25,26,24,28,29,29,22]]
         #      batch_offset = [0,1,2,3,4,5]
         rem_tgts = res[:, 0] // beam_size # remaining targets [0, 2]
+        d_factor_range = torch.arange(d_factor, device=input.device)
         rem_ts_and_ds = ((rem_tgts.repeat_interleave(d_factor, dim=0)
-                                    * d_factor)  \
-                                    .view(-1, d_factor) \
-                                    + torch.arange(d_factor)) \
-                                    .view(-1)                        #[0,1,4,5]
+            * d_factor).view(-1, d_factor) + d_factor_range).view(-1) #[0,1,4,5]
 
         # get new scramble idxs given old scramble idxs and remaining targets
         prev_scramble_len = scramble_idxs.shape[0]
-        rem_reorder_map = torch.ones(prev_scramble_len, dtype=torch.long) * -1
-        rem_reorder_map[rem_ts_and_ds] = torch.arange(rem_ts_and_ds.shape[0])
+        rem_reorder_map = -1 * torch.ones(prev_scramble_len, dtype=torch.long,
+                                          device=input.device)
+        rem_reorder_map[rem_ts_and_ds] = torch.arange(rem_ts_and_ds.shape[0],
+                                                      device=input.device)
                                                                 #[0,1,-1,-1,2,3]
         scrmbd_reorder_map = rem_reorder_map[scramble_idxs]     #[2,-1,0,3,1,-1]
         scrmbd_rem_mask = rem_reorder_map[scramble_idxs] != -1  #[1, 0,1,1,1, 0]

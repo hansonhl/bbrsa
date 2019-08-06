@@ -1,4 +1,4 @@
-import logging
+import torch, logging
 
 from abc import ABC, abstractmethod, abstractproperty
 
@@ -132,8 +132,10 @@ class BatchDistractor(BBRSAABC):
         return self.d_factor * self.orig_batch_size
 
 class Pragmatics(BBRSAABC):
-    def __init__(self, logger=None):
+    def __init__(self, opts, logger=None):
         super().__init__(logger)
+        self.gpu = opts.gpu
+        self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
 
     @abstractproperty
     def inference(self, probs, opts, *args):

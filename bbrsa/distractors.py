@@ -325,8 +325,6 @@ class BertDistractor(BatchDistractor):
                            .format(i+1, tot_batches))
             res += self._generate_batch(batch, opts)
 
-        print('len_res', len(res))
-
         return res, self.new_batch_size
 
 

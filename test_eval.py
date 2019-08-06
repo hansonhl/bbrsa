@@ -17,28 +17,32 @@ from bbrsa.utils import init_logger, display
 # from utils import init_logger, display
 
 opts = bbrsa.DEFAULT_OPTS
+large_clean_input_path = '/home/hansonlu/myOpenNMT/data/giga/input_clean.txt'
+small_clean_input_path = 'data/giga_test_50.txt'
 part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_nocov_step_59156_valacc48.57_ppl15.51.pt'
 part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_nocov_step_59156.pt'
 
+opts.batch_size = 5
 
 logger = init_logger(no_format=True, print_level=logging.DEBUG)
 eval_s0 = ONMTSummarizer(opts, part1_model_path)
-evaluator = Evaluator(eval_s0, logger=logger)
+evaluator = Evaluator(eval_s0, opts, logger=logger)
 
 summ_s0 = ONMTSummarizer(opts, part2_model_path, logger=logger)
-pragmatics = BasicPragmatics()
+pragmatics = BasicPragmatics(opts)
 distractor = NextExampleDistractor()
-model = ONMTSummaryRSA(summ_s0, pragmatics, distractor)
+model = ONMTSummaryRSA(summ_s0, pragmatics, distractor, opts)
 
 
 # srcs = ['police arrested five climate-change protesters friday after they sought to disrupt loading of a french arctic research and supply vessel , a spokesman for the protesters said .']
 
-with open('/home/hansonlu/myOpenNMT/data/giga/input_clean.txt', 'r') as f:
+with open(small_clean_input_path, 'r') as f:
     srcs = [s.strip() for s in f.readlines()]
 
 
-acc = evaluator.split_evaluate(model, distractor, srcs, opts, verbose=True)
-print('Accuracy: {:.5}'.format(acc))
+evaluator.split_evaluate(model, distractor, srcs, opts, verbose=True)
+print('=== Finished.')
+# print('Accuracy: {:.5}'.format(acc))
 
 # pred = model.summarize_s0(src, beam_size=10)
 

@@ -129,22 +129,29 @@ def opts_to_list(o):
         if val == 'None':
             val = 'none'
         res.append(val)
+        if k == 'gpu':
+            res += ['-gpu', '0']
         if k == 's0_block_ngram_repeat':
             res += ['-ignore_when_blocking', ".", "</t>", "<t>"]
     return res
 
 
-def scramble2tgt(idxs, d_factor):
+def scramble2tgt(idxs, d_factor, device=None):
     """Given scrambling indices, get indices of target examples"""
     # e.g. input idxs=[1,2,0,3], d_factor=2 -> out [2, 1],
     # elements 2 and 1 in list [1,2,0,3] are the indices of two targets
     # respectively, in correct order
+
     if isinstance(idxs, torch.Tensor):
         idxs_len = idxs.shape[0]
+        if device is None:
+            device = idxs.device
     elif isinstance(idxs, list):
         idxs_len = len(idxs)
+        if device is None:
+            device = torch.device('cpu')
     scrambled = idx_remap(idxs)
-    return scrambled[torch.arange(0, idxs_len, d_factor)]
+    return scrambled[torch.arange(0, idxs_len, d_factor, device=device)]
 
 def idx_remap(idxs):
     # e.g. input idxs=[1,2,0,3] -> output [2,0,1,3]

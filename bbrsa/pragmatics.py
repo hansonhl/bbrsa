@@ -4,8 +4,8 @@ import logging
 from bbrsa.abstract_classes import Pragmatics
 
 class BasicPragmatics(Pragmatics):
-    def __init__(self, logger=None):
-        super().__init__(logger)
+    def __init__(self, opts, logger=None):
+        super().__init__(opts, logger)
 
     def l1(self, log_probs, opts, *args):
         """Pragmatic listener based on top of s0"""
@@ -42,8 +42,8 @@ class BasicPragmatics(Pragmatics):
         return res
 
 class GrowingAlphaPragmatics(BasicPragmatics):
-    def __init__(self, logger=None):
-        super().__init__(logger)
+    def __init__(self, opts, logger=None):
+        super().__init__(opts, logger)
 
     def s1(self, s0_log_probs, l1_log_probs, opts, step):
         """Pragmatic speaker, alpha grows incrementally until it reaches self.alpha"""
@@ -66,8 +66,8 @@ class MemoizedListener(BasicPragmatics):
     #    instead of [B*b, d, V]: need to use the output word that's chosen in
     #    last timestep. For this I need to add one more argument in l1.
     #    probably use *args in base definition?
-    def __init__(self, logger=None):
-        super().__init__(logger)
+    def __init__(self, opts, logger=None):
+        super().__init__(opts, logger)
         self.l1_prev_prob = None
 
     def clear_mem(self):
@@ -86,15 +86,18 @@ class MemoizedListener(BasicPragmatics):
         num_world_states = log_probs.shape[1]
 
         if self.l1_prev_prob is None:
-            self.l1_prev_prob = torch.zeros(log_probs.shape, dtype=torch.double)
+            self.l1_prev_prob = torch.zeros(log_probs.shape, dtype=torch.double,
+                                            device=self.device)
             self.l1_prev_prob -= np.log(num_world_states)
-            priors = torch.zeros(log_probs.shape[:-1], dtype=torch.double)
+            priors = torch.zeros(log_probs.shape[:-1], dtype=torch.double,
+                                 device=self.device)
             priors -= np.log(num_world_states)
             priors = priors.unsqueeze(2)
 
         if rem_idxs is not None:
             priors = self.l1_prev_prob.index_select(0, rem_idxs)      # [B*b', d, V]
-            priors = priors[torch.arange(priors.shape[0]), :, curr_pred] # [B*b', d]
+            range = torch.arange(priors.shape[0], device=self.device)
+            priors = priors[range, :, curr_pred] # [B*b', d]
             priors = priors - torch.logsumexp(priors, dim=1, keepdim=True)
             priors = priors.unsqueeze(2)                           #[B*b', d, 1]
 

@@ -30,6 +30,7 @@ _default_opts_dict = {
     'bert_distr_mask_topk': 5,
     'bert_distr_repl_search_topk': 5,
     'bert_distr_ensure_different': True,
+    'eval_shard_size': 512
 }
 
 DEFAULT_OPTS = ConfigOpts(_default_opts_dict)
