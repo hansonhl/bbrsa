@@ -65,11 +65,11 @@ class ONMTBeam(Beam):
                 memory_lengths=s.memory_lengths)
 
 
-    def advance(self, log_probs, attn, opts=None, verbose=False):
+    def advance(self, log_probs, attn, opts=None):
         if isinstance(self.beam, RankDiverseBeam):
-            self.beam.advance(log_probs, attn, opts, verbose=verbose)
+            self.beam.advance(log_probs, attn, opts)
         else:
-            self.beam.advance(log_probs, attn, verbose=verbose)
+            self.beam.advance(log_probs, attn)
 
     def update_finished(self):
         self.beam.update_finished()

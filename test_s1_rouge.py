@@ -33,7 +33,7 @@ logger = init_logger(no_format=True, print_level=logging.DEBUG)
 # evaluator = Evaluator(eval_s0, logger=logger)
 
 opts.gpu = False
-opts.batch_size = 16
+opts.batch_size = 32
 opts.beam_size = 10
 opts.n_best = 1
 opts.prag_alpha = 3.
