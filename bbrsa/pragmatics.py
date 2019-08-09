@@ -17,13 +17,11 @@ class BasicPragmatics(Pragmatics):
     def s1(self, s0_log_probs, l1_log_probs, opts, *args):
         """Pragmatic speaker"""
         adjusted = opts.prag_alpha * l1_log_probs
-        isnan_mask = torch.isnan(adjusted)
-        adjusted[isnan_mask] = float('-inf')
+        adjusted[torch.isnan(adjusted)] = float('-inf')
 
         log_probs = s0_log_probs + adjusted
 
-        lse = torch.logsumexp(log_probs, dim=2, keepdim=True)
-        normalized = log_probs - lse
+        normalized = log_probs - torch.logsumexp(log_probs, dim=2, keepdim=True)
         return normalized
 
     def inference(self, s0_log_probs, opts, *args):
@@ -36,10 +34,8 @@ class BasicPragmatics(Pragmatics):
         Returns:
             `tensor([*, num_world_states, vocab_size])`
         """
-        s0_log_probs = s0_log_probs.type(torch.double)
         l1_log_probs = self.l1(s0_log_probs, opts, *args)
-        res = self.s1(s0_log_probs, l1_log_probs, opts, *args).type(torch.float)
-        return res
+        return self.s1(s0_log_probs, l1_log_probs, opts, *args)
 
 class GrowingAlphaPragmatics(BasicPragmatics):
     def __init__(self, opts, logger=None):
@@ -52,13 +48,11 @@ class GrowingAlphaPragmatics(BasicPragmatics):
             alpha = min(step, grow_steps) / grow_steps * opts.prag_alpha # grows in  steps
 
         adjusted = alpha * l1_log_probs
-        isnan_mask = torch.isnan(adjusted)
-        adjusted[isnan_mask] = float('-inf')
+        adjusted[torch.isnan(adjusted)] = float('-inf')
 
         log_probs = s0_log_probs + adjusted
 
-        lse = torch.logsumexp(log_probs, dim=2, keepdim=True)
-        normalized = log_probs - lse
+        normalized = log_probs - torch.logsumexp(log_probs, dim=2, keepdim=True)
         return normalized
 
 class MemoizedListener(BasicPragmatics):

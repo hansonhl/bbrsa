@@ -11,11 +11,11 @@ INFO = logging.INFO
 DEBUG = logging.DEBUG
 
 class ONMTSummarizer(LiteralSpeaker):
-    def __init__(self, my_opts, model_ckpt_path, logger=None):
+    def __init__(self, my_opts, ckpt_path, logger=None):
         """build summarizer from config"""
         super().__init__(logger)
 
-        self.translator = onmt_translator_builder(model_ckpt_path, my_opts, logger)
+        self.translator = onmt_translator_builder(my_opts, ckpt_path, logger)
 
         # for batch
         self.data, self.data_iter = None, None
@@ -120,10 +120,6 @@ class ONMTSummarizer(LiteralSpeaker):
             src_map=self.src_map if step is not None else batch.src_map,
             step=step,
             batch_offset=beam_batch_offset)
-        # normalize
-        if step is not None:
-            lse = torch.logsumexp(log_probs, dim=1, keepdim=True)
-            log_probs = log_probs - lse
 
         return log_probs, attn
 

@@ -6,7 +6,7 @@ import bbrsa
 
 sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 
-from bbrsa.bbrsa import ONMTSummaryRSA
+from bbrsa.bbrsa import ONMTRSAModel
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.distractors import NextExampleDistractor, IdenticalDistractor, NextNDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
@@ -18,7 +18,7 @@ giga_config_path = 'onmt_configs/giga.yml'
 s0 = ONMTSummarizer(config_path=giga_config_path, logger=logger)
 pragmatics = GrowingAlphaPragmatics(alpha=1, steps=3, logger=logger)
 distractor = NextNDistractor(batch_size=s0.default_batch_size, N=1, logger=logger)
-model = ONMTSummaryRSA(s0, pragmatics, distractor, logger=logger)
+model = ONMTRSAModel(s0, pragmatics, distractor, logger=logger)
 
 
 src = ['police arrested five anti-nuclear protesters friday after they sought to disrupt loading of a french antarctic research and supply vessel , a spokesman for the protesters said .',

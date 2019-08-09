@@ -7,7 +7,7 @@ import cProfile, pstats
 
 # sys.path.append(os.path.abspath(bbrsa.ONMT_DIR))
 
-from bbrsa.bbrsa import ONMTSummaryRSA
+from bbrsa.bbrsa import ONMTRSAModel
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.evaluators import Evaluator
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics
@@ -23,9 +23,11 @@ small_clean_input_path = 'data/giga_test_50.txt'
 medium_clean_input_path = 'data/giga_test_500.txt'
 part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_nocov_step_59156_valacc48.57_ppl15.51.pt'
 # part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_nocov_step_59156.pt'
+stats_dump = 'results/profiler_s1.prof'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('model_path', default=part1_model_path)
+parser.add_argument('-m', '--model', default=part1_model_path)
+parser.add_argument('-o', '--out', default=stats_dump)
 args = parser.parse_args()
 
 logger = init_logger(no_format=True, print_level=logging.DEBUG)
@@ -38,10 +40,10 @@ opts.beam_size = 10
 opts.n_best = 1
 opts.prag_alpha = 3.
 
-summ_s0 = ONMTSummarizer(opts, args.model_path, logger=logger)
+summ_s0 = ONMTSummarizer(opts, args.model, logger=logger)
 pragmatics = BasicPragmatics(opts) # ok
 distractor = BertDistractor(opts)
-model = ONMTSummaryRSA(summ_s0, pragmatics, distractor, opts)
+model = ONMTRSAModel(summ_s0, pragmatics, distractor, opts)
 
 # src = ['police arrested five climate-change protesters friday after they sought to disrupt loading of a french arctic research and supply vessel , a spokesman for the protesters said .']
 
@@ -57,9 +59,12 @@ pr.disable()
 print('=============================')
 print('Finished running, took {:.4} s'.format(time.time() - start_time))
 
+print('Saving profiler output to', args.out)
 sortby = 'cumulative'
 ps = pstats.Stats(pr).sort_stats(sortby)
-ps.print_stats()
+
+ps.dump_stats(args.out)
+# ps.print_stats()
 
 # print('Writing results')
 # with open('results/inc_s0_output_alpha4.txt', 'w') as f:

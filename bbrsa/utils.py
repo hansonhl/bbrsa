@@ -80,18 +80,17 @@ def display(names, preds):
             print(names[j] + ': ' + s.strip())
         print('')
 
-def onmt_translator_builder(model_ckpt_path, my_opts, logger=None):
+def onmt_translator_builder(my_opts, s0_model_path, logger=None):
     if logger is not None:
-        logger.info('Building ONMT translator with model from ' + model_ckpt_path)
+        logger.info('Building ONMT translator with model from ' + s0_model_path)
     else:
-        print('Building ONMT translator with model from ' + model_ckpt_path)
+        print('Building ONMT translator with model from ' + s0_model_path)
 
     parser = ArgumentParser()
     opts.config_opts(parser)
     opts.translate_opts(parser)
 
-    arglist = ['-model', model_ckpt_path] + opts_to_list(my_opts)
-
+    arglist = ['-model', s0_model_path] + opts_to_list(my_opts)
     opt = parser.parse_args(arglist)
 
     ArgumentParser.validate_translate_opts(opt)
@@ -103,9 +102,10 @@ def onmt_translator_builder(model_ckpt_path, my_opts, logger=None):
 
     return translator
 
-def opts_to_list(o):
+def opts_to_list(opts):
     res = []
     lookup = {
+        's0_model_path': '-model',
         'batch_size': '-batch_size',
         'beam_size': '-beam_size',
         'dummy_src': '-src',
@@ -117,7 +117,7 @@ def opts_to_list(o):
         'min_length': '-min_length',
         'stepwise_penalty': '-stepwise_penalty'
     }
-    for k, v in o._configs.items():
+    for k, v in opts:
         if k not in lookup:
             continue
         val = str(v.value)
@@ -163,3 +163,9 @@ def chunks(l, n):
     # from https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    else:
+        return text

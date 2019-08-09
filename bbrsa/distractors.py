@@ -4,7 +4,7 @@ from bbrsa.utils import idx_remap, chunks
 from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM
 
 class AsIsDistractor(BatchDistractor):
-    """Use distractors that are already contained in the batch"""
+    """Use distractors as they are already arranged in the batch"""
     def __init__(self, d_factor, logger=None):
         super().__init__(logger)
         self._d_factor = d_factor
@@ -19,7 +19,7 @@ class AsIsDistractor(BatchDistractor):
 
 class NextExampleDistractor(BatchDistractor):
     """Use next example in batch as distractor"""
-    def __init__(self, logger=None):
+    def __init__(self, opts, logger=None):
         super().__init__(logger)
         self._d_factor = 2
 
@@ -39,7 +39,7 @@ class NextExampleDistractor(BatchDistractor):
 
 class IdenticalDistractor(BatchDistractor):
     """Use the sample itself as distractor"""
-    def __init__(self, logger=None):
+    def __init__(self, opts, logger=None):
         super().__init__(logger)
         self._d_factor = 2
 
@@ -57,7 +57,7 @@ class IdenticalDistractor(BatchDistractor):
 
 class NextNDistractor(BatchDistractor):
     """Use next N examples in batch as distractor"""
-    def __init__(self, logger=None):
+    def __init__(self, opts, logger=None):
         super().__init__(logger)
         self._d_factor = 4
 
@@ -106,7 +106,6 @@ class BertDistractor(BatchDistractor):
             self.model = self.model.cuda()
             self.mask_model = self.mask_model.cuda()
         self._info('---- Finished initializing')
-
 
         self.pad_token = tokenizer.pad_token
         self.pad_id = tokenizer.convert_tokens_to_ids([self.pad_token])[0]
@@ -191,9 +190,11 @@ class BertDistractor(BatchDistractor):
     def _generate_batch(self, src, opts):
         method = opts.bert_distr_method
         self._d_factor = opts.bert_distr_d_factor
+        num_distractors = opts.bert_distr_d_factor - 1
         salient_topk = opts.bert_distr_salient_topk
         mask_topk = opts.bert_distr_mask_topk
-        repl_search_topk = opts.bert_distr_repl_search_topk
+        repl_search_top = opts.bert_distr_repl_search_top
+        repl_search_bottom = opts.bert_distr_repl_search_bottom
         ensure_different = opts.bert_distr_ensure_different
 
         layer0_attn = (method == 'layer0_attn')
@@ -251,45 +252,53 @@ class BertDistractor(BatchDistractor):
         with torch.no_grad():
             mask_output = self.mask_model(masked_batch, attention_mask=attn_mask)
 
-        all_distractors = []
+        all_distr_sets = []
         scrm_src = [src[i] for i in scrm_idxs]
 
         for pred, masked_idxs, src_tok_ids, remap_idxs, src_str in \
-                zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, scrm_src):
-            # get top2 predictions for masked positions
-            _, repl_candidates = pred[masked_idxs].topk(repl_search_topk, dim=1)
+            zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, scrm_src):
+            # get predictions for masked positions
 
-            repl_idxs = torch.randint(repl_search_topk, (repl_candidates.shape[0],),
+            # _, repl_candidates = pred[masked_idxs].topk(repl_search_bottom, dim=1)
+            _, sorted_candidates = pred[masked_idxs].sort(dim=1, descending=True)
+            repl_candidates = sorted_candidates[:, repl_search_top:repl_search_bottom]
+            num_candidates = repl_candidates.shape[1]
+            num_positions = repl_candidates.shape[0]
+
+            repl_idxs = torch.randint(num_candidates, (num_distractors, num_positions),
                                       device=self.device)
 
-            rng = torch.arange(repl_candidates.shape[0], device=self.device)
+            rng = torch.arange(num_positions, device=self.device)
             subs = repl_candidates[rng, repl_idxs]
+            # if repl_idxs is has shape [num_positions , num_distractors]
+            # then repl_candidates[rng, repl_idxs] returns [num_positions, num_distractors]
 
             # ensure substitutions are different from orig toks
             if ensure_different:
                 org_toks = src_tok_ids[masked_idxs]
                 duplicate_mask = (subs == org_toks)
-                new_repl_idxs = repl_idxs[duplicate_mask] + 1
-                new_repl_idxs[new_repl_idxs >= repl_search_topk] = 0
-                subs[duplicate_mask] = repl_candidates[duplicate_mask, new_repl_idxs]
+                new_repl_idxs = repl_idxs.clone().detach()
+                new_repl_idxs[duplicate_mask] += 1
+                new_repl_idxs[new_repl_idxs >= num_candidates] = 0
+                replacements = repl_candidates[rng, new_repl_idxs]
 
-            # get substituted sentence
-            sub_sent = src_tok_ids.clone().detach()
-            sub_sent[masked_idxs] = subs
-            sub_sent = sub_sent[sub_sent != self.pad_id]
-            sub_tok_strs = tokenizer.convert_ids_to_tokens(sub_sent.tolist())
-            all_distractors.append(_retokenize(src_str, sub_tok_strs, remap_idxs))
+            # for each sentence in batch, multiple distractors form a set
+            distr_set = []
+            for repl in subs:
+                distr_sent = src_tok_ids.clone().detach()
+                distr_sent[masked_idxs] = repl
+                distr_sent = distr_sent[distr_sent != self.pad_id]
+                distr_tok_strs = tokenizer.convert_ids_to_tokens(distr_sent.tolist())
+                distr_set.append(_retokenize(src_str, distr_tok_strs, remap_idxs))
+            all_distr_sets.append(distr_set)
 
         # reorder and group together
         reorder_idxs = idx_remap(scrm_idxs)
-        all_distractors = [all_distractors[i] for i in reorder_idxs]
+        reorder_distr_sets = [all_distr_sets[i] for i in reorder_idxs]
         res = []
-        for s, d in zip(src, all_distractors):
+        for s, d_set in zip(src, reorder_distr_sets):
             res.append(s)
-            res.append(d)
-        # if self.verbose:
-        #     self._log('Bert Generated these distractors:\n')
-        #     self._log(res)
+            res += d_set
         return res
 
 
@@ -321,7 +330,7 @@ class BertDistractor(BatchDistractor):
 
         for i, batch in enumerate(chunks(src, self.orig_batch_size)):
             if i % 10 == 9:
-                self._info('-- Bert distractor generation batch {}/{}'\
+                self._info('>> BertDistractor batch {} / {}'\
                            .format(i+1, tot_batches))
             res += self._generate_batch(batch, opts)
 

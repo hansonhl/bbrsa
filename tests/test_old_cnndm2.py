@@ -1,7 +1,7 @@
 import sys, os, time, logging
 import bbrsa
 
-from bbrsa.bbrsa import ONMTSummaryRSA
+from bbrsa.bbrsa import ONMTRSAModel
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.pragmatics import BasicPragmatics
 from bbrsa.distractors import IdenticalDistractor, NextNDistractor, NextExampleDistractor
@@ -21,7 +21,7 @@ def main():
     s0 = ONMTSummarizer()
     pragmatics = BasicPragmatics(alpha=2)
     distractor = NextNDistractor(batch_size=s0.default_batch_size, N=1)
-    model = ONMTSummaryRSA(s0, pragmatics, distractor)
+    model = ONMTRSAModel(s0, pragmatics, distractor)
 
     print('----- Starting summary with distractor')
     start_time = time.time()
@@ -38,7 +38,7 @@ def main():
     # s0_2 = ONMTSummarizer()
     # pragmatics = BasicPragmatics(alpha=2)
     # distractor = IdenticalDistractor(batch_size=s0.default_batch_size)
-    # model = ONMTSummaryRSA(s0_2, pragmatics, distractor)
+    # model = ONMTRSAModel(s0_2, pragmatics, distractor)
     # print('----- Starting summary with identical distractor')
     # start_time = time.time()
     # pred3 = model.summarize_s0(src, beam_size=10)

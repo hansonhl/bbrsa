@@ -8,6 +8,11 @@ class ConfigOpts(object):
         for cfg in self._configs.values():
             cfg.reset()
 
+    def clone(self):
+        new_opts = ConfigOpts(self.default_dict())
+        new_opts.set_values(self.value_dict())
+        return new_opts
+
     def reinit(self, defaults):
         super().__setattr__('_configs', {})
         for k, x in defaults.items():
@@ -30,26 +35,26 @@ class ConfigOpts(object):
                 cfg.default = cfg._value
                 cfg.reset()
 
-    def get_value_dict(self):
+    def value_dict(self):
         res = {}
         for k, cfg in self._configs.items():
             if cfg._value is not None:
                 res[k] = cfg.value
         return res
 
-    def get_default_dict(self):
+    def default_dict(self):
         res = {}
         for k, cfg in self._configs.items():
             res[k] = (cfg.default, cfg.type)
         return res
 
-    def __getattr__(self, attr):
+    def _get(self, attr):
         if attr in self._configs:
             return self._configs[attr].value
         else:
             raise KeyError(attr + ' not found in configs!')
 
-    def __setattr__(self, attr, val):
+    def _set(self, attr, val):
         if attr in self._configs:
             if val is None:
                 self._configs[attr].reset()
@@ -58,11 +63,30 @@ class ConfigOpts(object):
         else:
             raise KeyError(attr + ' not found in configs!')
 
+    def __getattr__(self, attr):
+        return self._get(attr)
+
+    def __setattr__(self, attr, val):
+        self._set(attr, val)
+
+    def __getitem__(self, attr):
+        return self._get(attr)
+
+    def __setitem__(self, attr, val):
+        self._set(attr, val)
+
+
     def __str__(self):
-        res = ''
+        res = 'ConfigOpts:\n'
         for cfg in self._configs.values():
             res += str(cfg) + '\n'
         return res
+
+    def __iter__(self):
+        return iter(self._configs.items())
+
+    def __len__(self):
+        return len(self._configs)
 
 
 class ConfigItem(object):
@@ -107,5 +131,5 @@ class ConfigItem(object):
         self._value = None
 
     def __str__(self):
-        return '({}: default = {},  curr_val = {})'\
-            .format(self.name, self._default, self._value)
+        return '- {}: {}'\
+            .format(self.name, self.value)

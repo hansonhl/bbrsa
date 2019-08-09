@@ -1,16 +1,18 @@
 import sys, os
 import torch
 import logging
+import bbrsa
 
 from bbrsa.abstract_classes import BBRSAABC
+from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.beam import ONMTBeam
-from bbrsa.distractors import NextExampleDistractor
+from bbrsa.distractors import NextExampleDistractor, BertDistractor
 from bbrsa.pragmatics import BasicPragmatics, GrowingAlphaPragmatics, MemoizedListener
 from bbrsa.utils import idx_remap, scramble2tgt, chunks
 from torchtext.data.batch import Batch as TorchBatch
 
 
-class ONMTSummaryRSA(BBRSAABC):
+class ONMTRSAModel(BBRSAABC):
     def __init__(self, s0, pragmatics, distractor, opts, logger=None):
         super().__init__(logger)
 
@@ -19,6 +21,16 @@ class ONMTSummaryRSA(BBRSAABC):
         self.pragmatics = pragmatics
         self.gpu = opts.gpu
         self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
+
+    @classmethod
+    def from_opts(cls, opts, s0, logger=None):
+        if isinstance(s0, string):
+            s0_model = ONMTSummarizer(opts, s0, logger)
+        elif isinstance(s0, ONMTSummarizer):
+            s0_model = s0
+        pragmatics = bbrsa.str2prag[opts.pragmatics](opts, logger)
+        distractor = bbrsa.str2distr[opts.distractor](opts, logger)
+        return cls(s0_model, pragmatics, distractor, logger, opts)
 
     def _log(self, message, level=None):
         if self.logger is None:
@@ -56,9 +68,9 @@ class ONMTSummaryRSA(BBRSAABC):
         """Converts arrays of indices to text"""
         # reordered is false when idx order is scrambled (for s0)
         # batch provides extended vocab and scrambled indices
-
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
         # uses method defined in TranslationBuilder._build_target_tokens()
+
         base_itos = dict(self.s0.translator.fields)['tgt'].base_field.vocab.itos
         base_size = len(base_itos)
         preds = []
@@ -114,7 +126,7 @@ class ONMTSummaryRSA(BBRSAABC):
 
             for i, batch in enumerate(s0.data_iter):
                 if i % 10 == 9:
-                    self._info('Processing batch {}\n'.format(i))
+                    self._info('S0 batch {}'.format(i+1))
                 s0.encode(batch)
                 s0.batch_augment(batch, beam_size)
                 s0.enc_states_augment(beam_size)
@@ -189,7 +201,7 @@ class ONMTSummaryRSA(BBRSAABC):
         truncate = opts.truncate
         diverse_beam = opts.diverse_beam
 
-        self._log('==== Beginning Summary with S0 ====', logging.INFO)
+        self._info('>> Summary with S0')
 
         preds, _ = self._run_s0(src, opts)
 
@@ -241,16 +253,16 @@ class ONMTSummaryRSA(BBRSAABC):
         with torch.no_grad():
             for batch in s0.data_iter:
                 s0.encode(batch)
-                decoder_inputs = batch.tgt
+                curr_tgt = batch.tgt[1:, :, :]
                 log_probs, _ = s0.decode(
-                    input=decoder_inputs,
+                    input=curr_tgt,
                     batch=batch,
                     step=None,
                     beam_batch_offset=None)
 
                 reorder_idxs = idx_remap(batch.indices)
                 reordered_probs = log_probs.index_select(1, reorder_idxs)
-                reordered_tgts = batch.tgt.index_select(1, reorder_idxs)
+                reordered_tgts = curr_tgt.index_select(1, reorder_idxs)
                 masks = (reordered_tgts != pad_token)
 
                 sent_probs = torch.zeros(num_candidates, device=self.device)
@@ -295,13 +307,14 @@ class ONMTSummaryRSA(BBRSAABC):
         n_best = opts.n_best
         truncate = opts.truncate
         diverse_beam = opts.diverse_beam
+        shard_size = opts.shard_size
 
         assert (not isinstance(self.pragmatics, GrowingAlphaPragmatics)) \
             and (not isinstance(self.pragmatics, MemoizedListener)), \
             'Must use BasicPragmaitcs for global S1!'
         assert (n_best <= beam_size), 'n_best must be less than beam size!'
 
-        self._log('==== Beggining Summary with global S1 ====', logging.INFO)
+        self._info('>> Summary with global S1')
 
         candidates, _ = self._run_s0(src, opts, dump=None)
         # candidates has shape [num_srcs, num_candidates]
@@ -311,7 +324,7 @@ class ONMTSummaryRSA(BBRSAABC):
 
         s0_probs = self._get_s0_log_probs(srcs, candidates, d_factor, truncate)
         s1_probs = self.pragmatics.inference(s0_probs, opts)
-        # both s0_probs and s1_probs have shape [num_srcs, d_factor, num_candidates]
+        # both have shape [num_srcs, d_factor, num_candidates]
 
         tgt_probs = s1_probs[:, 0, :]
         n_best_probs, n_best_idxs = tgt_probs.topk(n_best, dim=1)
@@ -327,7 +340,7 @@ class ONMTSummaryRSA(BBRSAABC):
         truncate = opts.truncate
         diverse_beam = opts.diverse_beam
 
-        self._log('==== Beginning Summary with incremental s1 ====')
+        self._info('>> Summary with incremental s1')
         assert self.distractor is not None, 'Must specify distractor!'
         assert self.pragmatics is not None, 'Must specify pragmatics'
         preds = []
@@ -335,21 +348,27 @@ class ONMTSummaryRSA(BBRSAABC):
 
         with torch.no_grad():
             s0 = self.s0
-            d_factor = self.distractor.d_factor
+
+            # for BertDistractor, d_factor may be variable
+            if isinstance(self.distractor, BertDistractor):
+                d_factor = opts.bert_distr_d_factor
+            else:
+                d_factor = self.distractor.d_factor
+
             s0.set_configs(beam_size=beam_size, n_best=n_best)
-            self._info('-- Generating distractors')
+            self._debug('Generating distractors')
             src, batch_size = self.distractor.generate(src, opts)
 
-            self._info('-- Initializing batch iterator')
+            self._debug('Initializing batch iterator')
             s0.init_batch_iterator(
                 src=src,
                 batch_size=batch_size,
                 truncate=truncate)
-            self._info('-- Finished initializing batch iterator')
+            self._debug('Finished initializing batch iterator')
 
             for i, batch in enumerate(s0.data_iter):
                 if i % 10 == 9:
-                    self._info('Processing batch {}'.format(i+1))
+                    self._info('Incr. S1 batch {}'.format(i+1))
                 scramble_idxs = batch.indices % batch_size
 
                 # batch.indices contains the scrambling index
@@ -375,8 +394,7 @@ class ONMTSummaryRSA(BBRSAABC):
                     distractor=self.distractor,
                     scramble_idxs=batch.indices)
 
-                batch_offset = list(range(len(beam.batch_offset) * \
-                    self.distractor.d_factor))
+                batch_offset = list(range(len(beam.batch_offset) * d_factor))
 
                 for step in range(max_length):
                     # self._log('----step {}----'.format(step))
@@ -438,7 +456,8 @@ class ONMTSummaryRSA(BBRSAABC):
                     s0.dec_states_rearrange(select_indices)
                 # end for step
 
-                batch_preds = self.itos(beam.predictions, batch, reordered=True, d_factor=d_factor)
+                batch_preds = self.itos(beam.predictions, batch, reordered=True,
+                                        d_factor=d_factor)
                 preds += batch_preds
             # end for batch
         # end with no_grad

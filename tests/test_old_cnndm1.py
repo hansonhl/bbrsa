@@ -3,7 +3,7 @@ import sys, os
 import torch
 import bbrsa
 
-from bbrsa.bbrsa import ONMTSummaryRSA
+from bbrsa.bbrsa import ONMTRSAModel
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.pragmatics import BasicPragmatics
 from bbrsa.distractors import NextExampleDistractor
@@ -22,7 +22,7 @@ def main():
     s0 = ONMTSummarizer()
     pragmatics = BasicPragmatics(alpha=1)
     distractor = NextExampleDistractor(batch_size=s0.default_batch_size)
-    model = ONMTSummaryRSA(s0, pragmatics, distractor)
+    model = ONMTRSAModel(s0, pragmatics, distractor)
 
     print('----- Starting summary with distractor')
     start_time = time.time()
