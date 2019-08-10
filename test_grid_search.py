@@ -3,7 +3,7 @@ from bbrsa.grid_search import *
 from bbrsa.utils import init_logger
 
 logging.basicConfig(level=logging.WARNING)
-logger = init_logger(print_level=logging.INFO)
+logger = init_logger(print_level=logging.DEBUG)
 
 default_opts = bbrsa.DEFAULT_OPTS
 
@@ -15,8 +15,10 @@ db_path = 'tables/50testres.db'
 
 test_opts = default_opts.clone()
 test_opts.set_as_default({'beam_size': 5,
-                          'batch_size': 25,
+                          'batch_size': 10,
                           'prag_alpha': 1.,
+                          'distractor': 'bert',
+                          'gpu': True,
                           'mode': 'incr_s1'})
 
 gs = GridSearch(part1_model_path, part2_model_path, src_path, tgt_path,
@@ -39,7 +41,10 @@ test_res_dict = {
 
 # newid = gridsearch.db_insert(test_opts, test_res_dict)
 
-test_grid_dict = {'prag_alpha': [1.1, 1.2, 1.3, 1.4, 1.5, 1.75]}
+test_grid_dict = {'mode': ['incr_s1'],
+                  'bert_distr_d_factor': [5],
+                  'bert_distr_repl_search': [(0, 5)],
+                  'prag_alpha': [2.]}
 gs.execute(test_grid_dict, pred_save_file='gs_results/50test')
 
 # s0_grid_dict = {'mode': ['s0']}

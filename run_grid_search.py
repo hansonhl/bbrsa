@@ -32,6 +32,7 @@ gs = GridSearch(part1_model_path, part2_model_path, src_path, tgt_path,
 # gs.execute(s0_grid_dict, pred_save_file=pred_save_file)
 
 test_grid_dict = {'mode': ['incr_s1'],
-                  'bert_distr_repl_search': [(20, 50)],
-                  'prag_alpha': [0.5, 1.0, 1.5, 2., 2.5, 3., 3.5]}
+                  'bert_distr_d_factor': [5],
+                  'bert_distr_repl_search': [(0, 5)],
+                  'prag_alpha': [2., 2.5, 3.]}
 gs.execute(test_grid_dict, pred_save_file=pred_save_file)

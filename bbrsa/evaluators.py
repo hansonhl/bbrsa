@@ -5,7 +5,7 @@ from tqdm import tqdm
 from bbrsa.abstract_classes import BBRSAABC
 from bbrsa.summarizers import ONMTSummarizer
 from bbrsa.utils import idx_remap, chunks
-from bbrsa.distractors import AsIsDistractor, NextExampleDistractor
+from bbrsa.distractors import AsIsDistractor, NextExampleDistractor, BertDistractor
 
 
 class Evaluator(BBRSAABC):
@@ -134,7 +134,11 @@ class Evaluator(BBRSAABC):
         distractor = model.distractor
 
         self._info('>>>> Starting Split Evaluation')
-        model.distractor = AsIsDistractor(distractor.d_factor, self.logger)
+        if isinstance(distractor, BertDistractor):
+            d_factor = opts.bert_distr_d_factor
+        else:
+            d_factor = distractor.d_factor
+        model.distractor = AsIsDistractor(d_factor, self.logger)
 
         torch.manual_seed(opts.random_seed)
 

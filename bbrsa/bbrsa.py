@@ -350,10 +350,8 @@ class ONMTRSAModel(BBRSAABC):
             s0 = self.s0
 
             # for BertDistractor, d_factor may be variable
-            if isinstance(self.distractor, BertDistractor):
-                d_factor = opts.bert_distr_d_factor
-            else:
-                d_factor = self.distractor.d_factor
+            d_factor = self.distractor.d_factor
+            self._debug('d_factor {}'.format(d_factor))
 
             s0.set_configs(beam_size=beam_size, n_best=n_best)
             self._debug('Generating distractors')
@@ -369,6 +367,9 @@ class ONMTRSAModel(BBRSAABC):
             for i, batch in enumerate(s0.data_iter):
                 if i % 10 == 9:
                     self._info('Incr. S1 batch {}'.format(i+1))
+                else:
+                    self._debug('Incr. S1 batch {}'.format(i+1))
+                self._debug('batch_size {}'.format(batch_size))
                 scramble_idxs = batch.indices % batch_size
 
                 # batch.indices contains the scrambling index
