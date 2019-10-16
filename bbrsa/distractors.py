@@ -89,12 +89,11 @@ class BertDistractor(BatchDistractor):
         super().__init__(logger)
         self._d_factor = 2
         self.gpu = opts.gpu
-        if self.gpu:
-            self._info('---- Using GPU')
         self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
 
         # initialize bert
-        self._info('---- Initializing Bert models for distractor')
+        logging.basicConfig(level=logging.WARNING)
+        self._info('>> Initializing Bert models for distractor')
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         tokenizer = self.tokenizer
         self.model = BertModel.from_pretrained('bert-base-uncased',
@@ -105,7 +104,7 @@ class BertDistractor(BatchDistractor):
         if self.gpu:
             self.model = self.model.cuda()
             self.mask_model = self.mask_model.cuda()
-        self._info('---- Finished initializing')
+        self._info('>> Finished initializing')
 
         self.pad_token = tokenizer.pad_token
         self.pad_id = tokenizer.convert_tokens_to_ids([self.pad_token])[0]
@@ -115,11 +114,32 @@ class BertDistractor(BatchDistractor):
         self.unk_id = tokenizer.convert_tokens_to_ids([self.unk_token])[0]
 
         # insignificant tokens to filter out
-        self.ignore_toks = ['[CLS]', '[SEP]', self.unk_token]
+        excl0 = ['[CLS]', '[SEP]', self.unk_token]
+        excl1 = ['[CLS]', '[SEP]', self.unk_token,'(', ')',
+                 '\'', '\"', '.', ',', '#', '!', '?', '*',]
+        excl2 = excl1 + ['monday', 'tuesday', 'wednesday', 'thursday',
+                         'friday', 'saturday', 'sunday']
+        excl3 = excl2 + ['the', 'a', 'an', 'some', 'of',
+                         'have', 'had', 'has',
+                         'say', 'said', 'says',
+                         'be', 'been', 'being', 'is', 'are', 'was', 'were',
+                         'this', 'that', 'these', 'there']
+
+        self.exclusion_set = [excl0, excl1, excl2, excl3]
+        self.ignore_toks = self.exclusion_set[opts.bert_distr_exclusion_set]
+        self._debug('Ignore_toks:')
+        self._debug(' '.join(self.ignore_toks))
+
         ignore_ids = tokenizer.convert_tokens_to_ids(self.ignore_toks)
-        self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.uint8,
+        self.ignore_mask = torch.ones(tokenizer.vocab_size, dtype=torch.bool,
                                       device=self.device)
-        self.ignore_mask[ignore_ids] = 0
+        self.ignore_mask[ignore_ids] = False
+
+        if opts.bert_distr_no_subword_repl:
+            for k, v in tokenizer.vocab.items():
+                if k.startswith('##'):
+                    self.ignore_mask[v] = False
+                    self.ignore_toks.append(k)
 
         self.generate_methods = ['layer0_attn', 'unmasked_surprisal']
 
@@ -132,6 +152,7 @@ class BertDistractor(BatchDistractor):
     def _cleanup(self, sent):
         tokenizer = self.tokenizer
         sent = sent.strip()
+        sent = sent.replace('`', '\'')
         sent = sent.replace('``', '\"')
         sent = sent.replace('\'\'', '\"')
         sent = sent.replace('-lrb-', '(')
@@ -143,6 +164,8 @@ class BertDistractor(BatchDistractor):
 
     def _batch_to_idx_tensor(self, text):
         """Process batch a text for input to bert.
+
+        All outputs are sorted (i.e. 'scrambled') according to sequence length.
 
         Returns:
             (LongTensor, list[list[str]], LongTensor, LongTensor, list[list[None, int]]):
@@ -169,14 +192,14 @@ class BertDistractor(BatchDistractor):
         tok_id_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()),
             dtype=torch.long, device=self.device)
         attn_mask_tensor = torch.zeros((len(indexed_tokens), seq_lens.max()),
-            dtype=torch.long, device=self.device)
+            dtype=torch.bool, device=self.device)
         pad_idx = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0]
         tok_id_tensor.fill_(pad_idx)
 
         for idx, (seq, seqlen) in enumerate(zip(indexed_tokens, seq_lens)):
             tok_id_tensor[idx, :seqlen] = torch.tensor(seq, dtype=torch.long,
                 device=self.device)
-            attn_mask_tensor[idx, :seqlen] = 1
+            attn_mask_tensor[idx, :seqlen] = True
 
         scrm_seq_lens, scrm_idxs = seq_lens.sort(0, descending=True)
         scrm_tok_id_tensor = tok_id_tensor[scrm_idxs]
@@ -201,21 +224,21 @@ class BertDistractor(BatchDistractor):
         unm_surp = (method == 'unmasked_surprisal')
 
         tokenizer = self.tokenizer
-
         batch_tensor, str_toks, seq_lens, attn_mask, scrm_idxs, tok_remap \
             = self._batch_to_idx_tensor(src)
 
         if layer0_attn:
-            with torch.no_grad():
-                outputs = self.model(batch_tensor, attention_mask=attn_mask)
-
-            # get layer 0 attention
-            # attn has shape [batch_size, num_heads, max_src_len, max_src_len]
-            attn = outputs[2][0]
-            summed = attn.sum(dim=2).sum(dim=1) # [batch_size, max_src_len]
-            summed = summed / summed.sum(dim=1, keepdim=True) # normalize
-
-            _, topk_idxs = summed.topk(salient_topk, sorted=True)
+            raise NotImplementedError
+            # with torch.no_grad():
+            #     outputs = self.model(batch_tensor, attention_mask=attn_mask)
+            #
+            # # get layer 0 attention
+            # # attn has shape [batch_size, num_heads, max_src_len, max_src_len]
+            # attn = outputs[2][0]
+            # summed = attn.sum(dim=2).sum(dim=1) # [batch_size, max_src_len]
+            # summed = summed / summed.sum(dim=1, keepdim=True) # normalize
+            #
+            # _, topk_idxs = summed.topk(salient_topk, sorted=True)
         elif unm_surp:
             with torch.no_grad():
                 outputs = self.mask_model(batch_tensor, attention_mask=attn_mask)
@@ -226,23 +249,21 @@ class BertDistractor(BatchDistractor):
             topk_idxs = []
 
             for sent_log_probs, word_ids, seq_len in zip(log_probs, batch_tensor, seq_lens):
-                surprisal = (-sent_log_probs[r, word_ids])[:seq_len]
-                _, topk = surprisal.topk(salient_topk, sorted=True)
+                surprisal = -(sent_log_probs[r, word_ids])[:seq_len]
+
+                # filter out insignificant words that are attended to,
+                # e.g. [CLS] [SEP], see __init__ for more
+                keep_mask = self.ignore_mask[word_ids[:seq_len]]
+                surprisal[torch.bitwise_not(keep_mask)] = -float('inf')
+
+                _, topk = surprisal.topk(mask_topk, sorted=True)
                 topk_idxs.append(topk)
 
         all_masked_tensors = []
         all_masked_idxs = []
 
         # get mask_id's and get new tensors with things masked out
-        for attended_idxs, src_tok_ids in zip(topk_idxs, batch_tensor):
-            # filter out insignificant words that are attended to,
-            # e.g. [CLS] [SEP], see __init__ for more
-            attended_toks = src_tok_ids[attended_idxs]
-            signif_mask = self.ignore_mask[attended_toks]
-            signif_idxs = attended_idxs[signif_mask]
-
-            # mask top 3 words according to salient heuristic
-            masked_idxs = signif_idxs[:mask_topk]
+        for masked_idxs, src_tok_ids in zip(topk_idxs, batch_tensor):
             masked_toks = src_tok_ids.clone().detach()
             masked_toks[masked_idxs] = self.mask_id
             all_masked_tensors.append(masked_toks)
@@ -254,7 +275,6 @@ class BertDistractor(BatchDistractor):
 
         all_distr_sets = []
         scrm_src = [src[i] for i in scrm_idxs]
-
         for pred, masked_idxs, src_tok_ids, remap_idxs, src_str in \
             zip(mask_output[0], all_masked_idxs, batch_tensor, tok_remap, scrm_src):
             # get predictions for masked positions

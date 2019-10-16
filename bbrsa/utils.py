@@ -1,6 +1,7 @@
 import logging
 import json
 import torch
+import sqlite3
 
 from onmt.utils.parse import ArgumentParser
 import onmt.opts as opts
@@ -64,9 +65,12 @@ def init_logger(no_format=False, print_level=logging.DEBUG, log_file=None,
     return logger
 
 def display(names, preds):
-    """Display predictions given by bbrsa summarization module
+    """
+    Display predictions given by bbrsa summarization module
+
     Args:
-        names: a list of strings indicating the name of each set of predictions.
+        names (list[str]): the name of each set of predictions.
+        preds (list): model output
     """
     num_examples = len(preds[0])
     for i in range(num_examples):
@@ -169,3 +173,19 @@ def remove_prefix(text, prefix):
         return text[len(prefix):]
     else:
         return text
+
+def db_connect(db_file):
+    """ create a database connection to the SQLite database
+
+    Args:
+        db_file: database file
+
+    Returns: Connection object or None
+    """
+    try:
+        conn = sqlite3.connect(db_file)
+        return conn
+    except sqlite3.Error as e:
+        print(e)
+
+    return None

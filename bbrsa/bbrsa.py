@@ -65,11 +65,27 @@ class ONMTRSAModel(BBRSAABC):
         return tokens
 
     def itos(self, idxs, batch, reordered=False, d_factor=None):
-        """Converts arrays of indices to text"""
+        """
+        Converts arrays of indices to text
+
+        Uses similar method to that defined in
+        `TranslationBuilder._build_target_tokens().`
+
+        Args:
+            idxs: one batch of sentences in index form.
+                `List[batch_size][n_best]` of ``LongTensor([sentence_len,])``
+            batch: batch object yielded from data_iter, provides extended vocab
+                used in pointer generator and scramble indices
+            reordered: true if sentences in batch were reverted to orig order
+            d_factor: number of distractors + 1.
+
+        Returns:
+            preds: list of strings, corresponding to the indices.
+                `[batch_size,]`
+        """
         # reordered is false when idx order is scrambled (for s0)
-        # batch provides extended vocab and scrambled indices
         # idxs is a [batch_size, n_best] 2d list of tensors of ids
-        # uses method defined in TranslationBuilder._build_target_tokens()
+        #
 
         base_itos = dict(self.s0.translator.fields)['tgt'].base_field.vocab.itos
         base_size = len(base_itos)
@@ -196,6 +212,17 @@ class ONMTRSAModel(BBRSAABC):
         # end with torch.no_grad()
 
     def summarize_s0(self, src, opts, dump=None):
+        """
+        Summarize source text using base s0 neural model.
+
+        Args:
+            src: articles to summarize. List of strings.
+            opts: `ConfigOpts` object listing all param and _configs
+            dump: [deprecated]
+
+        Returns:
+            res: 2d-list of strings for results. `[len(src), opts.n_best]`
+        """
         beam_size = opts.beam_size
         n_best = opts.n_best
         truncate = opts.truncate
@@ -225,8 +252,10 @@ class ONMTRSAModel(BBRSAABC):
             truncate: whether to truncate src article. # possibly change
 
         Returns:
-            ``tensor([num_srcs, d_factor, num_candidates])``
-            Matrix of log probabilities, for S0(u|w), last dimension normalized
+            all_sent_probs: Matrix of log probabilities, for S0(u|w), last
+                dimension normalized.
+                ``tensor([num_srcs, d_factor, num_candidates])``
+
         """
         # reshape srcs into (num_srcs, d_factor)
         src_chunks = list(chunks(srcs, d_factor))
@@ -288,20 +317,15 @@ class ONMTRSAModel(BBRSAABC):
 
 
     def global_s1(self, src, opts):
-        """Summarize source text using global RSA
+        """
+        Summarize source text using global RSA model.
 
         Args:
-            src: articles to summarize, list of strings
+            src: articles to summarize. List of strings.
+            opts: `ConfigOpts` object listing all param and _configs
 
-            ### below are in opts
-            beam_size: beam size during beam search of s0, equivalent to number
-                of candidate utterances for each article, used as the set of
-                possible utterances for the pragmatic l1 and s1, default 5.
-            n_best: number of articles returned at the end, ranked by s1's
-                probabilities, default 1.
-            truncate: length of src article that is truncated when read by s0,
-                default None, which does not truncate it
-            diverse_beam: name of strategy for diverse beam search in s0
+        Returns:
+            res: 2d-list of strings for results. `[len(src), opts.n_best]`
         """
         beam_size = opts.beam_size
         n_best = opts.n_best
@@ -334,7 +358,16 @@ class ONMTRSAModel(BBRSAABC):
 
 
     def incremental_s1(self, src, opts):
-        """Summarize source text using incremental RSA."""
+        """
+        Summarize source text using global RSA model.
+
+        Args:
+            src: articles to summarize. List of strings.
+            opts: `ConfigOpts` object listing all param and _configs
+
+        Returns:
+            preds: 2d-list of strings for results. `[len(src), opts.n_best]`
+        """
         beam_size = opts.beam_size
         n_best = opts.n_best
         truncate = opts.truncate
@@ -369,7 +402,6 @@ class ONMTRSAModel(BBRSAABC):
                     self._info('Incr. S1 batch {}'.format(i+1))
                 else:
                     self._debug('Incr. S1 batch {}'.format(i+1))
-                self._debug('batch_size {}'.format(batch_size))
                 scramble_idxs = batch.indices % batch_size
 
                 # batch.indices contains the scrambling index
@@ -382,7 +414,7 @@ class ONMTRSAModel(BBRSAABC):
                 max_length = s0.max_output_length
 
                 # Beam only generates output for target text. The following
-                # give the batch size from the perspective of the beam.
+                # gives the batch size from the perspective of the beam.
                 # The elements in the beam are in their original unscrambled order
                 beam_batch_size = batch.batch_size // d_factor
                 # self._log('batch.batch_size is {}'.format(batch.batch_size), logging.INFO)

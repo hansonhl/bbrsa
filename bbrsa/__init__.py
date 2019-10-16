@@ -64,12 +64,14 @@ _default_opts_dict = {
 
     'nextn_distr_N': 3,
     'bert_distr_d_factor': 2, # change, relevant to s1 only
-    'bert_distr_method': ('unmasked_surprisal', ['unmasked_surprisal', 'layer0_attn']),
+    'bert_distr_method': ('unmasked_surprisal', ['unmasked_surprisal']), #fix for now, other opetion 'layer0_attn' is deprecated.
     'bert_distr_salient_topk': 15, #fix
     'bert_distr_mask_topk': 5, #fix
     'bert_distr_repl_search_top': 0, #change, relevant to s1 only
     'bert_distr_repl_search_bottom': 5, #change, relevant to s1 only
-    'bert_distr_ensure_different': True #fix
+    'bert_distr_ensure_different': True, #fix
+    'bert_distr_no_subword_repl': False,
+    'bert_distr_exclusion_set': 0
 }
 
 DEFAULT_OPTS = ConfigOpts(_default_opts_dict)

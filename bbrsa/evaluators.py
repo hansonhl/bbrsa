@@ -104,7 +104,7 @@ class Evaluator(BBRSAABC):
         res = torch.stack(all_sent_probs)
         return res
 
-    def split_evaluate(self, model, src, mode, opts):
+    def split_evaluate(self, model, src, mode, opts, output_distractors=False):
         """Evaluate l1 accuracy of guessing target given summary and distractors.
 
         opts.eval_shard_size divides src into large shards, each of which is
@@ -145,6 +145,8 @@ class Evaluator(BBRSAABC):
         total_correct = 0.
         total_srcs = 0.
 
+        if output_distractors:
+            all_distractors = []
         all_hypotheses = []
         total_shards = math.ceil(len(src) / opts.shard_size)
 
@@ -152,6 +154,8 @@ class Evaluator(BBRSAABC):
             self._info('>>>> SplitEval shard {}/{}'.format(i+1, total_shards))
             total_srcs += len(shard)
             model_in, _ = distractor.generate(shard, opts)
+            if output_distractors:
+                all_distractors.append(model_in)
             if mode == 'incr_s1':
                 model_out = model.incremental_s1(model_in, opts)
             elif mode == 's0':
@@ -172,7 +176,10 @@ class Evaluator(BBRSAABC):
 
         # reset model back to use original distractor
         model.distractor = distractor
-        return total_correct / total_srcs, all_hypotheses
+        if output_distractors:
+            return total_correct / total_srcs, all_hypotheses, all_distractors
+        else:
+            return total_correct / total_srcs, all_hypotheses
 
 
     def _display_one_result(self, src, hypothesis, probs):
