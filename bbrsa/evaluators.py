@@ -140,7 +140,8 @@ class Evaluator(BBRSAABC):
             d_factor = distractor.d_factor
         model.distractor = AsIsDistractor(d_factor, self.logger)
 
-        torch.manual_seed(opts.random_seed)
+        if opts.random_seed >= 0:
+            torch.manual_seed(opts.random_seed)
 
         total_correct = 0.
         total_srcs = 0.

@@ -137,6 +137,8 @@ def opts_to_list(opts):
             res += ['-gpu', '0']
         if k == 's0_block_ngram_repeat':
             res += ['-ignore_when_blocking', ".", "</t>", "<t>"]
+
+    res += ['-max_length', '80']
     return res
 
 
