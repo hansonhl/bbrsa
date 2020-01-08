@@ -88,7 +88,7 @@ class BertDistractor(BatchDistractor):
     def __init__(self, opts, logger=None):
         super().__init__(logger)
         self._d_factor = 2
-        self.gpu = opts.gpu
+        self.gpu = False # opts.gpu
         self.device = torch.device('cuda') if self.gpu else torch.device('cpu')
 
         # initialize bert
@@ -101,9 +101,9 @@ class BertDistractor(BatchDistractor):
         self.model.eval()
         self.mask_model = BertForMaskedLM.from_pretrained('bert-base-uncased')
         self.mask_model.eval()
-        if self.gpu:
-            self.model = self.model.cuda()
-            self.mask_model = self.mask_model.cuda()
+        # if self.gpu:
+        #     self.model = self.model.cuda()
+        #     self.mask_model = self.mask_model.cuda()
         self._info('>> Finished initializing')
 
         self.pad_token = tokenizer.pad_token
@@ -340,7 +340,7 @@ class BertDistractor(BatchDistractor):
         Returns:
             list of input strings coupled with their distractors
         """
-        self.orig_batch_size = opts.batch_size
+        self.orig_batch_size = 32
 
         assert opts.bert_distr_method in self.generate_methods, \
             'invalid BERT distractor generation method!'

@@ -41,17 +41,17 @@ gs = GridSearch(part1_model_path, part2_model_path, src_path, tgt_path,
 #                   'bert_distr_exclusion_set': [0, 3]}
 # gs.execute(test_grid_dict, pred_save_file=pred_save_file)
 #
-
-test_grid_dict = {'mode': ['incr_s1'],
-                  'batch_size': [8],
-                  'shard_size': [256],
-                  'bert_distr_d_factor': [10],
-                  'bert_distr_repl_search': [(5,10)],
-                  'prag_alpha': [2.5, 3.],
-                  'bert_distr_no_subword_repl': [True],
-                  'bert_distr_exclusion_set': [3]}
-
-gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'batch_size': [8],
+#                   'shard_size': [256],
+#                   'bert_distr_d_factor': [10],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [2.5, 3.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
 
 # """Test to get variance"""
 # test_grid_dict = {'mode': ['incr_s1'],
@@ -62,4 +62,201 @@ gs.execute(test_grid_dict, pred_save_file=pred_save_file)
 #                   'bert_distr_no_subword_repl': [True],
 #                   'bert_distr_exclusion_set': [3]}
 
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# """Test Beam size"""
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'beam_size': [15, 20],
+#                   'batch_size': [32],
+#                   'shard_size': [256],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.25],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['growing_alpha_p1'],
+#                   'prag_alpha_grow_steps': [3],
+#                   'beam_size': [10, 20],
+#                   'batch_size': [32],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [2.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['growing_alpha'],
+#                   'prag_alpha_grow_steps': [2, 3],
+#                   'beam_size': [10, 20],
+#                   'batch_size': [32],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.5, 2.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10, 20],
+#                   'batch_size': [1],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [10],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1., 1.25, 1.5],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [20],
+#                   'batch_size': [2],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.25],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [15],
+#                   'batch_size': [8],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [2],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1., 1.25, 1.5],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [15],
+#                   'batch_size': [3],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1., 1.25, 1.5],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['basic'],
+#                   'beam_size': [15, 20],
+#                   'batch_size': [4],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [2],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1., 1.25, 1.5],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10, 20],
+#                   'batch_size': [8],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [2],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10],
+#                   'batch_size': [8],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [2],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [2.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10],
+#                   'batch_size': [4],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [2.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+#
+# test_grid_dict = {'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10],
+#                   'batch_size': [2],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [10],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [2.],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+# test_grid_dict = {'gpu': [False],
+#                   'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [20],
+#                   'batch_size': [32],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.5],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+
+# test_grid_dict = {'gpu': [False],
+#                   'mode': ['incr_s1'],
+#                   'pragmatics': ['memoized_l1'],
+#                   'beam_size': [10, 20],
+#                   'batch_size': [32],
+#                   'shard_size': [512],
+#                   'bert_distr_d_factor': [5],
+#                   'bert_distr_repl_search': [(5,10)],
+#                   'prag_alpha': [1.25],
+#                   'bert_distr_no_subword_repl': [True],
+#                   'bert_distr_exclusion_set': [3]}
+#
+# gs.execute(test_grid_dict, pred_save_file=pred_save_file)
+
+
+test_grid_dict = {'gpu': [False],
+                  'mode': ['incr_s1'],
+                  'pragmatics': ['basic'],
+                  'beam_size': [20],
+                  'batch_size': [32],
+                  'shard_size': [128],
+                  'bert_distr_d_factor': [5],
+                  'bert_distr_repl_search': [(5,10)],
+                  'prag_alpha': [1.5],
+                  'bert_distr_no_subword_repl': [True],
+                  'bert_distr_exclusion_set': [3]}
 gs.execute(test_grid_dict, pred_save_file=pred_save_file)

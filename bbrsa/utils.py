@@ -95,6 +95,7 @@ def onmt_translator_builder(my_opts, s0_model_path, logger=None):
     opts.translate_opts(parser)
 
     arglist = ['-model', s0_model_path] + opts_to_list(my_opts)
+    print(arglist)
     opt = parser.parse_args(arglist)
 
     ArgumentParser.validate_translate_opts(opt)
@@ -125,6 +126,11 @@ def opts_to_list(opts):
         if k not in lookup:
             continue
         val = str(v.value)
+        if k == 'gpu':
+            if val == 'True':
+                res += ['-gpu', '0']
+            else:
+                continue
         if val == 'False':
             continue
         res.append(lookup[k])
@@ -133,8 +139,6 @@ def opts_to_list(opts):
         if val == 'None':
             val = 'none'
         res.append(val)
-        if k == 'gpu':
-            res += ['-gpu', '0']
         if k == 's0_block_ngram_repeat':
             res += ['-ignore_when_blocking', ".", "</t>", "<t>"]
 

@@ -14,6 +14,7 @@ distr_list = list(str2distr.keys())
 str2prag = {
     'basic': BasicPragmatics,
     'growing_alpha': GrowingAlphaPragmatics,
+    'growing_alpha_p1': GrowingAlphaPragmatics,
     'memoized_l1': MemoizedListener
 }
 prag_list = list(str2prag.keys())
@@ -60,7 +61,7 @@ _default_opts_dict = {
 
     # these can be changed
     'prag_alpha': 2.,        # change, relevant to s1 only
-    'prag_alpha_grow_steps': 5, # fix
+    'prag_alpha_grow_steps': 3, # fix
 
     'nextn_distr_N': 3,
     'bert_distr_d_factor': 2, # change, relevant to s1 only

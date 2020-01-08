@@ -377,7 +377,6 @@ class ONMTRSAModel(BBRSAABC):
         assert self.distractor is not None, 'Must specify distractor!'
         assert self.pragmatics is not None, 'Must specify pragmatics'
         preds = []
-        self.pragmatics.clear_mem()
 
         with torch.no_grad():
             s0 = self.s0
@@ -403,6 +402,9 @@ class ONMTRSAModel(BBRSAABC):
                 else:
                     self._debug('Incr. S1 batch {}'.format(i+1))
                 scramble_idxs = batch.indices % batch_size
+
+                if isinstance(self.pragmatics, MemoizedListener):
+                    self.pragmatics.clear_mem()
 
                 # batch.indices contains the scrambling index
                 # original order -> index_select(batch.indices) -> current order
@@ -430,7 +432,7 @@ class ONMTRSAModel(BBRSAABC):
                 batch_offset = list(range(len(beam.batch_offset) * d_factor))
 
                 for step in range(max_length):
-                    # self._log('----step {}----'.format(step))
+                    self._log('----step {}----'.format(step))
                     decoder_input = _reshape_beam2dec(beam.current_pred,
                         beam_size, d_factor, scramble_idxs)
 
@@ -445,6 +447,8 @@ class ONMTRSAModel(BBRSAABC):
                         d_factor, scramble_idxs)
                     # s0_log_probs.shape = [B*b, d, V] (B*b ordered)
 
+                    # self._debug("Before advance: beam.current_origin\n %s" % str(beam.current_origin))
+
                     # s1_log_probs = s0_log_probs # for debug
                     if isinstance(self.pragmatics, GrowingAlphaPragmatics):
                         s1_log_probs = self.pragmatics.inference(
@@ -457,6 +461,7 @@ class ONMTRSAModel(BBRSAABC):
                     else:
                         s1_log_probs = self.pragmatics.inference(
                             s0_log_probs, opts)
+
 
                     # s1_log_probs.shape = [B*b, d, V]
 
@@ -477,6 +482,8 @@ class ONMTRSAModel(BBRSAABC):
                         beam.update_finished()
                         if beam.is_done:
                             break
+
+                    # self._debug("After advance: beam.current_origin\n %s" % str(beam.current_origin))
 
                     select_indices, scramble_idxs, batch_offset = \
                         _reshape_select_idxs_and_rescramble(

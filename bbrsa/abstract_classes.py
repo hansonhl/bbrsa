@@ -25,6 +25,9 @@ class BBRSAABC(ABC):
         else:
             self.logger.log(logging.DEBUG, message)
 
+    def _mem_usage(self, device, message=""):
+        self._debug("%s, GPU memory usage %s MB" % (message, str(torch.cuda.memory_allocated(device=device) / 2**20)))
+
 
 class LiteralSpeaker(BBRSAABC):
     def __init__(self, logger=None):

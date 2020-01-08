@@ -48,7 +48,7 @@ class Evaluator(BBRSAABC):
             tgts += [s] * d_factor
 
         s0 = self.eval_s0
-        batch_size = opts.batch_size * d_factor
+        batch_size = 32 * d_factor# opts.batch_size * d_factor
 
         s0.init_batch_iterator(src=srcs, tgt=tgts, truncate=truncate,
             batch_size=batch_size)
@@ -155,6 +155,8 @@ class Evaluator(BBRSAABC):
             self._info('>>>> SplitEval shard {}/{}'.format(i+1, total_shards))
             total_srcs += len(shard)
             model_in, _ = distractor.generate(shard, opts)
+            if opts.gpu:
+                torch.cuda.empty_cache()
             if output_distractors:
                 all_distractors.append(model_in)
             if mode == 'incr_s1':
