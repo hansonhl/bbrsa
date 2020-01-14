@@ -1,7 +1,7 @@
 import torch, logging
 from bbrsa.abstract_classes import BatchDistractor
 from bbrsa.utils import idx_remap, chunks
-from pytorch_transformers import BertTokenizer, BertModel, BertForMaskedLM
+from transformers import BertTokenizer, BertModel, BertForMaskedLM
 
 class AsIsDistractor(BatchDistractor):
     """Use distractors as they are already arranged in the batch"""

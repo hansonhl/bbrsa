@@ -10,7 +10,11 @@ pytorch 1.0
 numpy
 opennmt
 pytorch-transformers
+py-rouge
 ```
+
+`py-rouge` is only necessary for running the automatic evaluation in the
+`grid_search` module.
 
 ### Installing OpenNMT
 
@@ -31,6 +35,6 @@ will be able to `import onmt` and its modules in any python script.
 
 ### Installing the `pytorch-transformers` API
 
-`pytorch-transformers` refers to the Huggingface pytorch implementation of BERT. It is only required for distractor generation. 
+`pytorch-transformers` refers to the Huggingface pytorch implementation of BERT. It is only required for distractor generation.
 
 When installing, please manually clone the directory and install locally. As for now, __DO NOT__ install through pip as it is outdated, install it in a similar way to how OpenNMT was installed as shown above. See [this link](https://github.com/huggingface/pytorch-transformers) for more details.

@@ -15,13 +15,17 @@ from bbrsa.utils import init_logger, display
 # from utils import init_logger, display
 
 opts = bbrsa.DEFAULT_OPTS
-large_clean_input_path = 'data/giga_2000valid_art.txt'
 small_clean_input_path = 'data/giga_test_50.txt'
-tiny_input_path = 'data/giga_small_input.txt'
-part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_nocov_step_59156_valacc48.57_ppl15.51.pt'
-part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_nocov_step_59156.pt'
+part1_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt1_shuf_step_73945.pt'
+part2_model_path = '/home/hansonlu/links/data/giga-models/giga_halfsplit_pt2_shuf_step_73945.pt'
 
-opts.batch_size = 32
+new_configs = {
+    'batch_size': 5,
+    'gpu': True,
+    'prag_alpha': 1.5
+}
+opts.batch_size = 5
+opts.gpu = True
 
 logger = init_logger(no_format=True, print_level=logging.DEBUG)
 eval_s0 = ONMTSummarizer(opts, part1_model_path)
@@ -35,7 +39,7 @@ model = ONMTRSAModel(summ_s0, pragmatics, distractor, opts)
 
 # srcs = ['police arrested five climate-change protesters friday after they sought to disrupt loading of a french arctic research and supply vessel , a spokesman for the protesters said .']
 
-with open(large_clean_input_path, 'r') as f:
+with open(small_clean_input_path, 'r') as f:
     srcs = [s.strip() for s in f.readlines()]
 
 start_time = time.time()
